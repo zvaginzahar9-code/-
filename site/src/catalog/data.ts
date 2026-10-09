@@ -31,3 +31,7 @@ export const normMark = (s: string) =>
   s.toLowerCase().replace(/[‐‑–—]/g, '-').replace(/\s+/g, '').replace(/[a-z]/g, ch => LAT[ch] ?? ch);
 
 export const kvLabel = (kv: number) => `Стальная опора ВЛ ${kv} кВ`;
+
+/** Escapes text for HTML templates (catalogue strings are static, but keep templates safe). */
+export const esc = (v: unknown) =>
+  String(v ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]!);

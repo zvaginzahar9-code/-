@@ -6,6 +6,8 @@ type Node = { name: string; x: number; y: number };
 const nodes = map.nodes as Record<string, Node>;
 const ALWAYS = new Set(['semey', 'aktogay', 'taldykorgan', 'alma', 'ekibastuz', 'ustkam', 'tulkubas', 'aktobe', 'uralsk', 'tengiz', 'dostyk']);
 const AREAS = new Set(['vko', 'almobl']);
+// the few labels still shown on a phone, where the map is ~350px wide
+const MAJOR = new Set(['uralsk', 'aktobe', 'ustkam', 'alma', 'tengiz']);
 
 export function initMap() {
   const host = $('[data-map]');
@@ -49,7 +51,7 @@ export function initMap() {
   for (const k of used) {
     if (AREAS.has(k)) continue;
     const n = nodes[k];
-    const g = mk('g', { class: 'node', 'data-k': k });
+    const g = mk('g', { class: MAJOR.has(k) ? 'node is-major' : 'node', 'data-k': k });
     mk('circle', { cx: n.x, cy: n.y, r: 4 }, g);
     if (ALWAYS.has(k)) {
       const left = n.x > map.w * 0.7;

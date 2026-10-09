@@ -1,6 +1,6 @@
 import { gsap, lockScroll } from '../core/smooth';
 import { $, reducedMotion } from '../core/env';
-import { bySlug } from './data';
+import { bySlug, esc } from './data';
 
 export const compareSet = new Set<string>();
 const MAX = 3;
@@ -37,7 +37,7 @@ function openCompare() {
       const k = (t.H * ppm) / (y1 - y0);
       const h = (y1 - y0 + 2) * k;
       const w = (x1 - x0 + 2) * k;
-      return `<figure><img src="${t.svgTower}" alt="Чертёж опоры ${t.mark}" style="height:${h}px;width:${w}px"><figcaption>${t.mark}</figcaption></figure>`;
+      return `<figure><img src="${t.svgTower}" alt="Чертёж опоры ${esc(t.mark)}" style="height:${h}px;width:${w}px"><figcaption>${esc(t.mark)}</figcaption></figure>`;
     })
     .join('');
   // union of all labels, in the order of the first tower's table
@@ -49,10 +49,10 @@ function openCompare() {
     .map(l => {
       const vals = items.map(t => val(t.slug, l));
       const diff = new Set(vals).size > 1;
-      return `<tr class="${diff ? 'is-diff' : ''}"><th scope="row">${l}</th>${vals.map(v => `<td>${v}</td>`).join('')}</tr>`;
+      return `<tr class="${diff ? 'is-diff' : ''}"><th scope="row">${esc(l)}</th>${vals.map(v => `<td>${esc(v)}</td>`).join('')}</tr>`;
     })
     .join('');
-  $('[data-cmp-table]')!.innerHTML = `<table><thead><tr><th></th>${items.map(t => `<th scope="col">${t.mark}</th>`).join('')}</tr></thead><tbody>${rows}</tbody></table>`;
+  $('[data-cmp-table]')!.innerHTML = `<table><thead><tr><th></th>${items.map(t => `<th scope="col">${esc(t.mark)}</th>`).join('')}</tr></thead><tbody>${rows}</tbody></table>`;
   ($('[data-cmp-close]') as HTMLButtonElement).focus();
   if (!reducedMotion) {
     gsap.from(box, { opacity: 0, duration: 0.3 });

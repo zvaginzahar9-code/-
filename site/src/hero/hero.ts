@@ -20,14 +20,15 @@ export function heroLayout(stage: HTMLElement): HeroLayout {
   const w = stage.clientWidth;
   const h = stage.clientHeight;
   const narrow = isNarrow();
-  const towerPx = narrow ? h * 0.5 : h * 0.74;
+  // phone: the title owns the top ~42% of the screen, the tower stands below it
+  const towerPx = narrow ? h * 0.36 : h * 0.74;
   const scale = towerPx / DEFAULT_TOWER.height;
   return {
     w,
     h,
     scale,
-    axisX: narrow ? w * 0.5 : w * 0.66,
-    groundY: narrow ? h * 0.83 : h * 0.9,
+    axisX: narrow ? w * 0.62 : w * 0.66,
+    groundY: narrow ? h * 0.8 : h * 0.9,
   };
 }
 
@@ -101,10 +102,10 @@ export function initHero() {
       p.style.strokeDasharray = `${len}`;
       p.style.strokeDashoffset = `${len}`;
     });
-    gsap.to(paths, { strokeDashoffset: 0, duration: 1.1, ease: 'power2.inOut', stagger: 0.07, delay: 0.15 });
-    gsap.from(poster.dims, { opacity: 0, duration: 0.8, delay: 1.1 });
-    gsap.from($$('.hero__title .line > span'), { yPercent: 110, duration: 1.1, ease: 'expo.out', stagger: 0.08, delay: 0.1 });
-    gsap.from(['.hero__owner', '.hero__range', '.hero__lead', '.hero__phases', '.stamp'], { opacity: 0, y: 12, duration: 0.8, ease: 'power3.out', stagger: 0.06, delay: 0.5 });
+    gsap.to(paths, { strokeDashoffset: 0, duration: 0.8, ease: 'power2.inOut', stagger: 0.035 });
+    gsap.from(poster.dims, { opacity: 0, duration: 0.6, delay: 0.7 });
+    gsap.from($$('.hero__title .line > span'), { yPercent: 110, duration: 0.9, ease: 'expo.out', stagger: 0.06 });
+    gsap.from(['.hero__owner', '.hero__range', '.hero__lead', '.hero__phases', '.stamp'], { opacity: 0, y: 12, duration: 0.6, ease: 'power3.out', stagger: 0.05, delay: 0.25 });
   }
 
   const setPhase = (p: number) => {
@@ -161,8 +162,6 @@ export function initHero() {
     const intents = ['scroll', 'wheel', 'pointermove', 'touchstart', 'keydown'];
     intents.forEach(ev => window.addEventListener(ev, start, { passive: true, once: true }));
     window.addEventListener('load', () => setTimeout(() => idle(start, 2000), 4000));
-    // fetch the module early (download only), so starting is instant
-    idle(() => void import('./scene'), 3000);
   }
 
   let rt = 0;

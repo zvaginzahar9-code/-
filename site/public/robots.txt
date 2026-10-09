@@ -1,2 +1,4 @@
 User-agent: *
 Allow: /
+
+Sitemap: https://energoconstruction.vercel.app/sitemap.xml

@@ -31,4 +31,11 @@ export default defineConfig({
     assetsInlineLimit: 2048,
   },
   server: { host: true },
+  // same security headers as production (vercel.json), so `npm run preview` catches CSP breakage
+  preview: {
+    headers: Object.fromEntries(
+      (JSON.parse(readFileSync(new URL('./vercel.json', import.meta.url), 'utf8')).headers[0].headers as { key: string; value: string }[])
+        .map(h => [h.key, h.key === 'Content-Security-Policy' ? h.value.replace('; upgrade-insecure-requests', '') : h.value]),
+    ),
+  },
 });

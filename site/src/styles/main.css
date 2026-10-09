@@ -519,7 +519,7 @@ ol, ul { padding: 0; list-style: none; }
 .ftr__col:first-child { grid-column: 1 / 6; }
 .ftr__col:nth-child(2) { grid-column: 7 / 13; display: grid; gap: 6px; }
 .ftr__name { color: var(--paper); font-weight: 560; margin-bottom: 8px; }
-.ftr__k { display: inline-block; min-width: 100px; color: var(--steel); }
+.ftr__k { display: inline-block; min-width: 100px; color: var(--zinc); opacity: 0.75; }
 .ftr a { color: var(--paper); text-decoration: none; }
 .ftr__word { grid-column: 1 / -1; min-width: 0; font-size: clamp(48px, 11.6vw, 230px); line-height: 0.8; letter-spacing: -0.06em; font-weight: 640; color: color-mix(in srgb, var(--paper) 9%, transparent); margin-top: 40px; margin-bottom: -0.1em; white-space: nowrap; font-variation-settings: 'SHRP' 100; }
 
@@ -562,8 +562,19 @@ ol, ul { padding: 0; list-style: none; }
   .plist__item p { grid-column: 2; font-size: 15px; margin-top: -8px; }
   .plist__img { display: block; grid-column: 1; grid-row: 1 / span 2; width: 96px; height: 96px; object-fit: cover; clip-path: polygon(0 0, 100% 0, 100% calc(100% - 10px), calc(100% - 10px) 100%, 0 100%); }
   .catalog__bar { gap: 10px; }
-  .kv { width: 100%; overflow-x: auto; scrollbar-width: none; }
-  .kv button { flex: 1 0 auto; padding: 10px 10px; }
+  .kv { width: 100%; display: grid; grid-template-columns: repeat(3, 1fr); }
+  .kv button { padding: 11px 6px; border-top: 1px solid var(--line-strong); }
+  .kv button + button { border-left: 0; }
+  .kv button:nth-child(-n + 3) { border-top: 0; }
+  .kv button:not(:nth-child(3n + 1)) { border-left: 1px solid var(--line-strong); }
+  .hero__lead { display: none; }
+  .hero__copy { top: calc(var(--hdr-h) + 20px); }
+  .hero__owner { margin-bottom: 10px; font-size: 13px; }
+  .hero__range { margin-top: 12px; }
+  .map .node text { font-size: 30px; stroke-width: 8px; }
+  .map .node:not(.is-major) text { display: none; }
+  .map .hq text { font-size: 34px; }
+  .map .hq rect { transform-box: fill-box; }
   .search { flex: 1; }
   .search input { width: 100%; }
   .catalog__count { margin-left: 0; width: 100%; }

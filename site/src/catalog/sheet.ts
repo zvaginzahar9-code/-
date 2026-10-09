@@ -1,6 +1,6 @@
 import { gsap, lockScroll, scrollToEl } from '../core/smooth';
 import { $, $$, fmt, isNarrow, reducedMotion } from '../core/env';
-import { bySlug, kvLabel, type Tower } from './data';
+import { bySlug, esc, kvLabel, type Tower } from './data';
 import { lineupNode, visibleTowers } from './catalog';
 import { compareSet, toggleCompare } from './compare';
 import { prefillRequest } from '../ui/form';
@@ -53,9 +53,9 @@ function fill(t: Tower) {
     [t.mass == null ? '—' : t.mass.toLocaleString('ru-RU'), 'Масса с цинком, кг'],
     [fmt(t.L, 2), 'Размер в осях фундамента L, м'],
   ];
-  $('[data-sheet-keys]')!.innerHTML = keys.map(([v, l]) => `<div><b>${v}</b><span>${l}</span></div>`).join('');
+  $('[data-sheet-keys]')!.innerHTML = keys.map(([v, l]) => `<div><b>${esc(v)}</b><span>${esc(l)}</span></div>`).join('');
   const tb = $('[data-sheet-specs]')!;
-  tb.innerHTML = t.specs.map((s, i) => `<tr style="--i:${i}"><th scope="row">${s.label}</th><td>${s.value}</td></tr>`).join('');
+  tb.innerHTML = t.specs.map((s, i) => `<tr style="--i:${i}"><th scope="row">${esc(s.label)}</th><td>${esc(s.value)}</td></tr>`).join('');
   tb.parentElement!.classList.remove('is-in');
   requestAnimationFrame(() => requestAnimationFrame(() => tb.parentElement!.classList.add('is-in')));
   $('[data-sheet-pos]')!.textContent = `${pos + 1} / ${list.length}`;

@@ -1,4 +1,36 @@
-import * as THREE from 'three';
+import {
+  ACESFilmicToneMapping,
+  BoxGeometry,
+  BufferAttribute,
+  BufferGeometry,
+  CanvasTexture,
+  CatmullRomCurve3,
+  CylinderGeometry,
+  DirectionalLight,
+  DynamicDrawUsage,
+  Euler,
+  ExtrudeGeometry,
+  HemisphereLight,
+  InstancedMesh,
+  LineBasicMaterial,
+  LineSegments,
+  MathUtils,
+  Matrix4,
+  Mesh,
+  MeshBasicMaterial,
+  MeshPhysicalMaterial,
+  MeshStandardMaterial,
+  PMREMGenerator,
+  PerspectiveCamera,
+  PlaneGeometry,
+  Quaternion,
+  SRGBColorSpace,
+  Scene,
+  Shape,
+  TubeGeometry,
+  Vector3,
+  WebGLRenderer,
+} from 'three';
 import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
 import { buildTower, conductorPoints, DEFAULT_TOWER, type Member } from '../tower/model';
 import type { HeroLayout } from './hero';
@@ -15,7 +47,7 @@ const WIDTH: Record<Member['kind'], number> = { leg: 0.16, horizontal: 0.075, di
 /** Unit equal-leg angle (L-profile) running along +Y, centred on its heel. */
 function angleGeometry() {
   const t = 0.16; // flange thickness relative to width
-  const s = new THREE.Shape();
+  const s = new Shape();
   s.moveTo(-0.5, -0.5);
   s.lineTo(0.5, -0.5);
   s.lineTo(0.5, -0.5 + t);
@@ -23,7 +55,7 @@ function angleGeometry() {
   s.lineTo(-0.5 + t, 0.5);
   s.lineTo(-0.5, 0.5);
   s.closePath();
-  const g = new THREE.ExtrudeGeometry(s, { depth: 1, bevelEnabled: false });
+  const g = new ExtrudeGeometry(s, { depth: 1, bevelEnabled: false });
   g.translate(0, 0, -0.5);
   g.rotateX(-Math.PI / 2);
   return g;
@@ -32,29 +64,29 @@ function angleGeometry() {
 export function createTowerScene(canvas: HTMLCanvasElement, layout0: HeroLayout, onReady: () => void, still: boolean) {
   let L = layout0;
   const narrow = isNarrow();
-  const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true, powerPreference: 'high-performance' });
+  const renderer = new WebGLRenderer({ canvas, antialias: true, alpha: true, powerPreference: 'high-performance' });
   renderer.setPixelRatio(dpr(narrow ? 1.5 : 1.75));
   renderer.setSize(L.w, L.h, false);
-  renderer.outputColorSpace = THREE.SRGBColorSpace;
-  renderer.toneMapping = THREE.ACESFilmicToneMapping;
+  renderer.outputColorSpace = SRGBColorSpace;
+  renderer.toneMapping = ACESFilmicToneMapping;
   renderer.toneMappingExposure = 1.05;
 
-  const scene = new THREE.Scene();
-  const pmrem = new THREE.PMREMGenerator(renderer);
+  const scene = new Scene();
+  const pmrem = new PMREMGenerator(renderer);
   scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
   pmrem.dispose();
 
-  const sun = new THREE.DirectionalLight(0xfff4e0, 1.6);
+  const sun = new DirectionalLight(0xfff4e0, 1.6);
   sun.position.set(-20, 40, 30);
-  scene.add(sun, new THREE.HemisphereLight(0xe8eef2, 0x9aa1a5, 0.7));
+  scene.add(sun, new HemisphereLight(0xe8eef2, 0x9aa1a5, 0.7));
 
-  const camera = new THREE.PerspectiveCamera(12, L.w / L.h, 0.5, 2000);
+  const camera = new PerspectiveCamera(12, L.w / L.h, 0.5, 2000);
 
   // ── members ─────────────────────────────────────────────
   const members = buildTower(DEFAULT_TOWER, narrow ? 0.85 : 1).filter(m => m.kind !== 'insulator');
   const N = members.length;
   const uniforms = { uSweep: { value: -2 }, uBand: { value: 1.4 } };
-  const material = new THREE.MeshStandardMaterial({ color: 0xffffff, metalness: 0.5, roughness: 0.6, envMapIntensity: 1.1 });
+  const material = new MeshStandardMaterial({ color: 0xffffff, metalness: 0.5, roughness: 0.6, envMapIntensity: 1.1 });
   material.onBeforeCompile = shader => {
     shader.uniforms.uSweep = uniforms.uSweep;
     shader.uniforms.uBand = uniforms.uBand;
@@ -87,48 +119,48 @@ export function createTowerScene(canvas: HTMLCanvasElement, layout0: HeroLayout,
         totalEmissiveRadiance += vec3(1.0, 0.78, 0.25) * edgeZ * 0.55;`,
       );
   };
-  const mesh = new THREE.InstancedMesh(angleGeometry(), material, N);
-  mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+  const mesh = new InstancedMesh(angleGeometry(), material, N);
+  mesh.instanceMatrix.setUsage(DynamicDrawUsage);
   scene.add(mesh);
 
   // final transforms + scattered start states
-  const up = new THREE.Vector3(0, 1, 0);
-  const finals: { pos: THREE.Vector3; quat: THREE.Quaternion; scale: THREE.Vector3; from: THREE.Vector3; spin: THREE.Quaternion; order: number }[] = [];
+  const up = new Vector3(0, 1, 0);
+  const finals: { pos: Vector3; quat: Quaternion; scale: Vector3; from: Vector3; spin: Quaternion; order: number }[] = [];
   const rnd = mulberry32(7);
   for (const m of members) {
-    const a = new THREE.Vector3(...m.a);
-    const b = new THREE.Vector3(...m.b);
+    const a = new Vector3(...m.a);
+    const b = new Vector3(...m.b);
     const dir = b.clone().sub(a);
     const len = dir.length();
     const pos = a.clone().add(b).multiplyScalar(0.5);
-    const quat = new THREE.Quaternion().setFromUnitVectors(up, dir.normalize());
+    const quat = new Quaternion().setFromUnitVectors(up, dir.normalize());
     // turn the angle so its heel faces outwards
     const outward = Math.atan2(pos.x, pos.z);
-    quat.multiply(new THREE.Quaternion().setFromAxisAngle(up, outward + Math.PI * 0.75));
+    quat.multiply(new Quaternion().setFromAxisAngle(up, outward + Math.PI * 0.75));
     const w = WIDTH[m.kind];
-    const out = new THREE.Vector3(pos.x, 0, pos.z).normalize();
+    const out = new Vector3(pos.x, 0, pos.z).normalize();
     if (!isFinite(out.x)) out.set(1, 0, 0);
-    const from = pos.clone().add(out.multiplyScalar(3 + rnd() * 5)).add(new THREE.Vector3((rnd() - 0.5) * 3, 2 + rnd() * 5, (rnd() - 0.5) * 3));
-    const spin = new THREE.Quaternion().setFromEuler(new THREE.Euler((rnd() - 0.5) * 1.6, (rnd() - 0.5) * 1.6, (rnd() - 0.5) * 1.6));
-    finals.push({ pos, quat, scale: new THREE.Vector3(w, len + w * 0.4, w), from, spin, order: m.order });
+    const from = pos.clone().add(out.multiplyScalar(3 + rnd() * 5)).add(new Vector3((rnd() - 0.5) * 3, 2 + rnd() * 5, (rnd() - 0.5) * 3));
+    const spin = new Quaternion().setFromEuler(new Euler((rnd() - 0.5) * 1.6, (rnd() - 0.5) * 1.6, (rnd() - 0.5) * 1.6));
+    finals.push({ pos, quat, scale: new Vector3(w, len + w * 0.4, w), from, spin, order: m.order });
   }
 
   // ── drawing lines (blueprint) ───────────────────────────
   const linePos = new Float32Array(N * 6);
   members.forEach((m, i) => linePos.set([...m.a, ...m.b], i * 6));
-  const lineGeo = new THREE.BufferGeometry();
-  lineGeo.setAttribute('position', new THREE.BufferAttribute(linePos, 3));
-  const lineMat = new THREE.LineBasicMaterial({ color: 0x1c2226, transparent: true, opacity: 0.9, depthWrite: false });
-  const lines = new THREE.LineSegments(lineGeo, lineMat);
+  const lineGeo = new BufferGeometry();
+  lineGeo.setAttribute('position', new BufferAttribute(linePos, 3));
+  const lineMat = new LineBasicMaterial({ color: 0x1c2226, transparent: true, opacity: 0.9, depthWrite: false });
+  const lines = new LineSegments(lineGeo, lineMat);
   scene.add(lines);
 
   // ── insulator strings (glass discs) ─────────────────────
   const conductors = conductorPoints(DEFAULT_TOWER);
   const discsPer = 9;
-  const discGeo = new THREE.CylinderGeometry(0.17, 0.17, 0.05, 20);
-  const discMat = new THREE.MeshPhysicalMaterial({ color: 0x9fb3b8, roughness: 0.08, metalness: 0, transmission: 0.2, thickness: 0.2, clearcoat: 1 });
-  const discs = new THREE.InstancedMesh(discGeo, discMat, conductors.length * discsPer);
-  const dm = new THREE.Matrix4();
+  const discGeo = new CylinderGeometry(0.17, 0.17, 0.05, 20);
+  const discMat = new MeshPhysicalMaterial({ color: 0x9fb3b8, roughness: 0.08, metalness: 0, transmission: 0.2, thickness: 0.2, clearcoat: 1 });
+  const discs = new InstancedMesh(discGeo, discMat, conductors.length * discsPer);
+  const dm = new Matrix4();
   conductors.forEach((c, k) => {
     for (let i = 0; i < discsPer; i++) {
       dm.makeTranslation(c[0], c[1] + 0.12 + i * 0.17, c[2]);
@@ -138,21 +170,21 @@ export function createTowerScene(canvas: HTMLCanvasElement, layout0: HeroLayout,
   scene.add(discs);
 
   // ── conductors: catenaries running along Z out of frame ─
-  const wireMat = new THREE.MeshStandardMaterial({ color: 0x2b3135, metalness: 0.6, roughness: 0.45 });
-  const wires: THREE.Mesh[] = [];
+  const wireMat = new MeshStandardMaterial({ color: 0x2b3135, metalness: 0.6, roughness: 0.45 });
+  const wires: Mesh[] = [];
   const span = 70;
   const addWire = (x: number, y: number, sag: number, r: number) => {
     // only the span running away from the camera: the near span would sweep across the copy
     for (const s of [-1]) {
-      const pts: THREE.Vector3[] = [];
+      const pts: Vector3[] = [];
       for (let i = 0; i <= 48; i++) {
         const t = i / 48;
         const z = s * t * span;
         // parabolic sag towards mid-span; the next tower is out of frame
-        pts.push(new THREE.Vector3(x, y - sag * 4 * t * (1 - t), z));
+        pts.push(new Vector3(x, y - sag * 4 * t * (1 - t), z));
       }
-      const geo = new THREE.TubeGeometry(new THREE.CatmullRomCurve3(pts), 96, r, 5, false);
-      const w = new THREE.Mesh(geo, wireMat);
+      const geo = new TubeGeometry(new CatmullRomCurve3(pts), 96, r, 5, false);
+      const w = new Mesh(geo, wireMat);
       w.userData.count = geo.index!.count;
       geo.setDrawRange(0, 0);
       wires.push(w);
@@ -163,11 +195,11 @@ export function createTowerScene(canvas: HTMLCanvasElement, layout0: HeroLayout,
   addWire(0, DEFAULT_TOWER.height, 4, 0.03); // earth wire
 
   // ── foundations + contact shadow ────────────────────────
-  const fGeo = new THREE.BoxGeometry(0.9, 0.5, 0.9);
-  const fMat = new THREE.MeshStandardMaterial({ color: 0xb4b8b6, roughness: 0.9 });
+  const fGeo = new BoxGeometry(0.9, 0.5, 0.9);
+  const fMat = new MeshStandardMaterial({ color: 0xb4b8b6, roughness: 0.9 });
   const half = DEFAULT_TOWER.base / 2;
   for (const [sx, sz] of [[-1, -1], [1, -1], [1, 1], [-1, 1]]) {
-    const f = new THREE.Mesh(fGeo, fMat);
+    const f = new Mesh(fGeo, fMat);
     f.position.set(sx * half, -0.2, sz * half);
     scene.add(f);
   }
@@ -180,9 +212,9 @@ export function createTowerScene(canvas: HTMLCanvasElement, layout0: HeroLayout,
     grd.addColorStop(1, 'rgba(28,34,38,0)');
     g.fillStyle = grd;
     g.fillRect(0, 0, 128, 128);
-    return new THREE.CanvasTexture(c);
+    return new CanvasTexture(c);
   })();
-  const shadow = new THREE.Mesh(new THREE.PlaneGeometry(14, 14), new THREE.MeshBasicMaterial({ map: shadowTex, transparent: true, depthWrite: false, opacity: 0 }));
+  const shadow = new Mesh(new PlaneGeometry(14, 14), new MeshBasicMaterial({ map: shadowTex, transparent: true, depthWrite: false, opacity: 0 }));
   shadow.rotation.x = -Math.PI / 2;
   shadow.position.y = 0.02;
   scene.add(shadow);
@@ -190,10 +222,10 @@ export function createTowerScene(canvas: HTMLCanvasElement, layout0: HeroLayout,
   // ── state ───────────────────────────────────────────────
   let p = 0;
   let shown = 0; // smoothed progress
-  const tmpM = new THREE.Matrix4();
-  const tmpQ = new THREE.Quaternion();
-  const tmpV = new THREE.Vector3();
-  const tmpS = new THREE.Vector3();
+  const tmpM = new Matrix4();
+  const tmpQ = new Quaternion();
+  const tmpV = new Vector3();
+  const tmpS = new Vector3();
 
   function frame(prog: number) {
     const pDraw = range(prog, 0, PHASE_AT[1]);
@@ -230,16 +262,16 @@ export function createTowerScene(canvas: HTMLCanvasElement, layout0: HeroLayout,
     discs.scale.setScalar(1);
 
     shadow.material.opacity = easeOut(pAsm);
-    for (const w of wires) (w.geometry as THREE.TubeGeometry).setDrawRange(0, Math.floor((w.userData.count as number) * easeInOut(pLine) / 6) * 6);
+    for (const w of wires) (w.geometry as TubeGeometry).setDrawRange(0, Math.floor((w.userData.count as number) * easeInOut(pLine) / 6) * 6);
 
     // camera: flat elevation (matches the SVG drawing) → dolly-zoom into a low 3/4 view
     const t = easeInOut(clamp(pAsm * 0.35 + pZinc * 0.25 + pLine * 0.4));
     const fov = lerp(12, narrow ? 30 : 36, t);
     camera.fov = fov;
     const viewH = L.h / L.scale; // metres visible vertically at the tower in the flat view
-    const dist0 = viewH / 2 / Math.tan(THREE.MathUtils.degToRad(12) / 2);
+    const dist0 = viewH / 2 / Math.tan(MathUtils.degToRad(12) / 2);
     const frameH = lerp(viewH, viewH * (narrow ? 1.05 : 0.95), t);
-    const dist = frameH / 2 / Math.tan(THREE.MathUtils.degToRad(fov) / 2);
+    const dist = frameH / 2 / Math.tan(MathUtils.degToRad(fov) / 2);
     // where the axis/ground sit on screen in the flat view
     const offX = (L.axisX - L.w / 2) / L.scale;
     const camY0 = (L.groundY - L.h / 2) / L.scale;

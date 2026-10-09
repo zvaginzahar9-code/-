@@ -1,6 +1,6 @@
 import { gsap, Flip } from '../core/smooth';
 import { $, $$, finePointer, reducedMotion, fmt, isNarrow } from '../core/env';
-import { towers, maxH, normMark, type Tower } from './data';
+import { towers, maxH, normMark, esc, type Tower } from './data';
 import { openSheet, onSheetChange } from './sheet';
 import { initCompare, toggleCompare, compareSet } from './compare';
 
@@ -56,11 +56,11 @@ export function initCatalog() {
     }
     li.innerHTML = `
       <span class="tw__group" aria-hidden="true">${t.kv} кВ</span>
-      <button class="tw__btn" type="button" aria-label="${t.mark}, ${t.kv} кВ, высота ${fmt(t.H)} м — открыть чертёж">
+      <button class="tw__btn" type="button" aria-label="${esc(t.mark)}, ${t.kv} кВ, высота ${fmt(t.H)} м — открыть чертёж">
         <span class="tw__tip" aria-hidden="true"></span>
         <img class="tw__sil" alt="" loading="lazy" decoding="async" src="${t.svgTower}">
       </button>
-      <p class="tw__label"><b>${t.mark}</b><span>${fmt(t.H)} м</span></p>`;
+      <p class="tw__label"><b>${esc(t.mark)}</b><span>${fmt(t.H)} м</span></p>`;
     nodes.set(t.slug, li);
     track.appendChild(li);
   }

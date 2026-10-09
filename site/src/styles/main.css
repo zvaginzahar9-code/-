@@ -521,6 +521,7 @@ ol, ul { padding: 0; list-style: none; }
 .ftr__name { color: var(--paper); font-weight: 560; margin-bottom: 8px; }
 .ftr__k { display: inline-block; min-width: 100px; color: var(--zinc); opacity: 0.75; }
 .ftr a { color: var(--paper); text-decoration: none; }
+.ftr__word::before { content: attr(data-word); }
 .ftr__word { grid-column: 1 / -1; min-width: 0; font-size: clamp(48px, 11.6vw, 230px); line-height: 0.8; letter-spacing: -0.06em; font-weight: 640; color: color-mix(in srgb, var(--paper) 9%, transparent); margin-top: 40px; margin-bottom: -0.1em; white-space: nowrap; font-variation-settings: 'SHRP' 100; }
 
 /* ───────────────────────── Cursor (fine pointers only) ───────────────────────── */

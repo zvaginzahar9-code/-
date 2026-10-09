@@ -1,0 +1,28 @@
+# dependencies & builds
+node_modules/
+dist/
+.vite/
+*.log
+__pycache__/
+*.pyc
+
+# OS / editors
+.DS_Store
+Thumbs.db
+desktop.ini
+.vscode/
+.idea/
+~$*
+
+# client source documents (kept locally, not published)
+*.pdf
+research/pdf/
+
+# scraped competitor material: only used locally to redraw the catalogue
+research/competitor/
+research/tower-svg/
+research/_samples.jpg
+
+# local env
+.env
+.env.*

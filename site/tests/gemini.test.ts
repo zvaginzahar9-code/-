@@ -42,9 +42,10 @@ const answer = (id: string, ...parts: string[]) => [
 ];
 const call = (id: string, callId: string, name: string, args: object) => [
   created(id),
-  { event_type: 'step.start', index: 0, step: { type: 'function_call', id: callId, name } },
-  { event_type: 'step.delta', index: 0, delta: { type: 'arguments', partial_arguments: JSON.stringify(args).slice(0, 9) } },
-  { event_type: 'step.delta', index: 0, delta: { type: 'arguments', partial_arguments: JSON.stringify(args).slice(9) } },
+  // the documented delta: { type: "arguments_delta", arguments: "<piece of JSON text>" }
+  { event_type: 'step.start', index: 0, step: { type: 'function_call', id: callId, name, arguments: {} } },
+  { event_type: 'step.delta', index: 0, delta: { type: 'arguments_delta', arguments: JSON.stringify(args).slice(0, 9) } },
+  { event_type: 'step.delta', index: 0, delta: { type: 'arguments_delta', arguments: JSON.stringify(args).slice(9) } },
   { event_type: 'step.stop', index: 0, status: 'waiting' },
   { event_type: 'interaction.status_update', interaction_id: id, status: 'requires_action' },
 ];

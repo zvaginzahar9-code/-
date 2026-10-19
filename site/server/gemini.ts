@@ -188,7 +188,8 @@ export function createGeminiClient(o: GeminiOptions): ModelClient {
                   if (e.delta.type === 'text' && e.delta.text) {
                     text += e.delta.text;
                     listeners.forEach(l => l(e.delta!.text!));
-                  } else if (e.delta.type === 'arguments' && typeof e.index === 'number') {
+                  } else if ((e.delta.type === 'arguments_delta' || e.delta.type === 'arguments') && typeof e.index === 'number') {
+                    // documented: { type: "arguments_delta", arguments: "<a piece of the JSON text>" }
                     const call = calls.get(e.index);
                     if (call) {
                       // arguments come either as JSON text in pieces or as a whole object

@@ -921,7 +921,7 @@ function createGeminiClient(o) {
 							if (e.delta.type === "text" && e.delta.text) {
 								text += e.delta.text;
 								listeners.forEach((l) => l(e.delta.text));
-							} else if (e.delta.type === "arguments" && typeof e.index === "number") {
+							} else if ((e.delta.type === "arguments_delta" || e.delta.type === "arguments") && typeof e.index === "number") {
 								const call = calls.get(e.index);
 								if (call) {
 									if (typeof e.delta.partial_arguments === "string") call.args += e.delta.partial_arguments;

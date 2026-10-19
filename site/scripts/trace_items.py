@@ -27,7 +27,12 @@ ACCENT = "#4F6E88"
 
 
 def layers(path):
-    im = Image.open(path).convert("RGB")
+    im = Image.open(path)
+    if im.mode in ("RGBA", "LA", "P"):
+        # transparent PNGs: put them on white, or the transparent area reads as black ink
+        im = im.convert("RGBA")
+        im = Image.alpha_composite(Image.new("RGBA", im.size, (255, 255, 255, 255)), im)
+    im = im.convert("RGB")
     a = np.asarray(im).astype(np.float32)
     r, g, b = a[..., 0], a[..., 1], a[..., 2]
     lum = 0.299 * r + 0.587 * g + 0.114 * b

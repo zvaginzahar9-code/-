@@ -24,6 +24,21 @@ RESEARCH, SITE = sys.argv[1], sys.argv[2]
 Z = os.path.join(RESEARCH, "zavsk")
 crawl = json.load(open(os.path.join(Z, "crawl.json"), encoding="utf-8"))
 P = crawl["products"]
+# the second pass over the rest of the source catalogue (LEP towers, antenna supports, concrete)
+MORE = os.path.join(Z, "more")
+if os.path.exists(os.path.join(MORE, "crawl.json")):
+    for path, v in json.load(open(os.path.join(MORE, "crawl.json"), encoding="utf-8"))["products"].items():
+        P.setdefault(path, v)
+
+# towers already in the tower lineup (src/data/catalog.json) are not repeated here
+TOWERS = {re.sub(r"[\s\-–]", "", t["mark"].lower()) for t in json.load(open(os.path.join(SITE, "src", "data", "catalog.json"), encoding="utf-8"))}
+
+
+def in_lineup(pr):
+    """True when every mark on the page (table rows "Опора …", else the title's last word) is a lineup tower."""
+    marks = [re.sub(r"^Опора\s+", "", r[0]) for t in pr["tables"] for r in t[1:] if r and re.match(r"^Опора\s", r[0])]
+    marks = marks or [pr["title"].split()[-1]]
+    return all(re.sub(r"[\s\-–]", "", m.lower()) in TOWERS for m in marks)
 
 # category -> groups (source section path, title on the site). Order is the order on the site.
 C = "/catalog/"
@@ -77,7 +92,29 @@ CATEGORIES = [
         (C + "metallokonstruktsii/kronshteyny/", "Кронштейны", None),
         (C + "metallokonstruktsii/nakladki/", "Накладки", None),
     ]),
+    ("lep", "Опоры ЛЭП других серий", [
+        (C + "metallicheskie-opory-lep/promezhutochnye-opory-lep/", "Промежуточные опоры", None),
+        (C + "metallicheskie-opory-lep/ankerno-uglovye-opory-lep/", "Анкерно-угловые опоры", None),
+        (C + "metallicheskie-opory-lep/unifitsirovannye-promezhutochnye-opory-lep/", "Унифицированные промежуточные", None),
+        (C + "metallicheskie-opory-lep/unifitsirovannye-ankerno-uglovye-opory-lep/", "Унифицированные анкерно-угловые", None),
+        (C + "metallicheskie-opory-lep/mnogogrannye/", "Многогранные опоры", None),
+    ]),
+    ("antenna", "Антенные опоры и мачты связи", [
+        (C + "antennye-opory/antennaya-opora-ao/", "Антенные опоры АО", None),
+        (C + "antennye-opory/machta-antennaya/", "Антенные мачты", None),
+        (C + "antennye-opory/vyshki-svyazi/rmg/", "Мачты связи РМГ", None),
+        (C + "antennye-opory/radioreleynoy-svyazi-rrl/", "Опоры радиорелейной связи РРЛ", None),
+        (C + "antennye-opory/dvoynogo-naznacheniya-odn/", "Опоры двойного назначения ОДН", None),
+    ]),
+    ("concrete", "Железобетонные изделия", [
+        (C + "zhelezobetonnye-opory-lep/", "Железобетонные опоры ЛЭП", None),
+        (C + "prozhektornye-machty/prozhektornye-machty-zhelezobetonnye/", "Прожекторные мачты ПМЖ", None),
+        (C + "molnieotvody/zhelezobitonnye-mzh/", "Молниеотводы МЖ", None),
+        (C + "metallicheskie-konstruktsii-dlya-svaynyh-fundamentov/opornye-plity/", "Фундаментные опорные плиты", None),
+    ]),
 ]
+# whole-category groups whose towers may already be in the lineup
+SKIP_LINEUP = "lep"
 
 # Text-only sections of the source (no product pages): the items are written out from the
 # section text, word for word where it gives facts.
@@ -100,6 +137,9 @@ NOT_DRAWINGS = {
     "opornye_plity_op-2.jpg", "plita_opornaya_op-1d.png", "prozhektornye-machty-vmon-vmont-95_900_0.jpg",
     "rostverki-ts-303_900_0.jpg", "screenshot_1-913_900_0.jpg", "screenshot_2_900_0.jpg",
     "usilennye_opornye_plity_uop-6.png",
+    "machta-teleskopicheskaya-mtc.jpg", "machta-teleskopicheskaya-mtl.jpg", "machta-teleskopicheskaya-mtp.jpg",
+    "machty-fermnye-st-3.png", "machty-fermnye-st-4.png", "machty-fermnye-tm.jpg", "opory-odn.jpg",
+    "opory-radioreleynoy-svyazi-rrl.png",
 }
 # collages "photo + drawing": only the drawing half is redrawn (box in source pixels)
 CROPS = {
@@ -131,8 +171,21 @@ HEADINGS = re.compile(r"^(Технические характеристики|Х
 
 
 def page(path):
-    fn = os.path.join(Z, "pages", hashlib.md5(path.encode()).hexdigest() + ".html")
+    name = hashlib.md5(path.encode()).hexdigest() + ".html"
+    fn = os.path.join(Z, "pages", name)
+    if not os.path.exists(fn):
+        fn = os.path.join(MORE, "pages", name)
     return open(fn, encoding="utf-8").read()
+
+
+def flat(fn):
+    """The image on white: transparent PNGs would otherwise turn black."""
+    im = Image.open(fn)
+    if im.mode in ("RGBA", "LA", "P"):
+        im = im.convert("RGBA")
+        bg = Image.new("RGBA", im.size, (255, 255, 255, 255))
+        im = Image.alpha_composite(bg, im)
+    return im.convert("RGB")
 
 
 def text(fragment):
@@ -208,7 +261,7 @@ def sentences(s):
 def dhash(fn, n=16):
     """Hash of the dark ink only, cropped to its box: the watermark is the same on every
     image and would make different small drawings look alike."""
-    a = np.asarray(Image.open(fn).convert("L"), dtype=np.float32)
+    a = np.asarray(flat(fn).convert("L"), dtype=np.float32)
     ink = a < 120
     if not ink.any():
         return np.zeros(n * n, bool)
@@ -230,7 +283,8 @@ def mark_of(title):
     if title in MARKS:
         return MARKS[title]
     # "Траверса ТМ-1" -> "ТМ-1"; "Консольные опоры М1-12-80С" -> "М1-12-80С"
-    m = re.search(r"([A-ZА-ЯЁ][A-Za-zА-ЯЁа-яё]{0,4}s?[-\s]?\d[\w.,/()-]*(?:\s*[,/]\s*[A-ZА-ЯЁ][\w.,/()-]*\d[\w.,/()-]*)*)\s*$", title)
+    # an optional leading digit belongs to the mark: "1П110-1", "2П330-5"
+    m = re.search(r"(\d?[A-ZА-ЯЁ][A-Za-zА-ЯЁа-яё]{0,4}s?[-\s]?\d[\w.,/()-]*(?:\s*[,/]\s*[A-ZА-ЯЁ][\w.,/()-]*\d[\w.,/()-]*)*)\s*$", title)
     if m:
         s = re.sub(r"(?<=[A-Za-zА-ЯЁа-яё])\s+(?=\d)", "-", m.group(1))  # "ПМС 24,0" -> "ПМС-24,0"
         s = s.replace(" ", "")
@@ -256,6 +310,12 @@ def keys_of(tabs, note):
                 keys["mass"] = num(v["t"])
             if "высота" in ht and "H" not in keys and num(v["t"]):
                 keys["H"] = num(v["t"])
+            if re.search(r"чертеж|чертёж|альбом|проект", ht) and "doc" not in keys and v["t"] not in ("", "—") and re.search(r"\d", v["t"]):
+                keys["doc"] = v["t"]
+    if "doc" not in keys:
+        m = re.search(r"(?:по (?:типовому |типовым )?(?:чертежу|чертежам|проекту|проектам)|по (?:типовой )?серии|Чертеж:)\s*([0-9A-ZА-ЯЁ][\w.\-]*\d[\w.\-]*)", note)
+        if m:
+            keys["doc"] = m.group(1).rstrip(".")
     if "mass" not in keys:
         m = re.search(r"(?:Вес|Масса)[:\s]*(\d+(?:[.,]\d+)?)\s*кг", note)
         if m:
@@ -289,6 +349,8 @@ for cid, ctitle, groups in CATEGORIES:
                 items.append({"slug": f"{cid}-{it['slug']}", "name": it["name"], "mark": mark_of(it["name"]), "draw": None, "note": it["note"], "tables": [], "keys": {}})
         else:
             paths = sorted(p for p in P if p.startswith(src) and p.count("/") == src.count("/") + 1 and (flt is None or flt(p)))
+            if cid == SKIP_LINEUP:
+                paths = [p for p in paths if not in_lineup(P[p])]
             for path in paths:
                 pr = P[path]
                 s = page(path)

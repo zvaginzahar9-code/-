@@ -503,6 +503,8 @@ ol, ul { padding: 0; list-style: none; }
 .it__stamp b { font-size: 17px; font-weight: 600; letter-spacing: -0.02em; line-height: 1.15; overflow-wrap: anywhere; }
 .it__stamp span { flex: none; font-family: var(--mono); font-size: 11px; color: var(--steel); font-feature-settings: 'tnum' 1; }
 .it__group { padding: 0 12px 10px; font-size: 12px; color: var(--steel); }
+.it__doc { padding: 2px 12px 0; font-family: var(--mono); font-size: 10.5px; color: var(--steel); overflow-wrap: anywhere; }
+.it__doc:last-child { padding-bottom: 10px; }
 .it__stamp:last-child { padding-bottom: 10px; }
 .it::after { content: ''; position: absolute; right: 10px; top: 10px; width: 8px; height: 8px; background: var(--signal); transform: scale(0) rotate(45deg); transition: transform 220ms var(--ease-out); }
 .it:focus-visible { outline-offset: -3px; }
@@ -530,6 +532,14 @@ ol, ul { padding: 0; list-style: none; }
 .ptable th, .ptable td { text-align: left; vertical-align: top; padding: 9px 12px 9px 0; border-bottom: 1px solid var(--line); }
 .ptable thead th { font-weight: 400; color: var(--steel); font-size: 12.5px; }
 .ptable tbody td:first-child { font-weight: 560; }
+.pstack { display: none; border-top: 2px solid var(--graphite); margin-bottom: 22px; }
+.pstack__row { padding: 12px 0; border-bottom: 1px solid var(--line-strong); }
+.pstack__t { font-weight: 600; font-size: 16px; margin-bottom: 6px; }
+.pstack__t span { display: block; font-weight: 400; font-size: 12px; color: var(--steel); }
+.pstack dl { margin: 0; display: grid; grid-template-columns: minmax(0, 1fr); }
+.pstack dl > div { display: flex; justify-content: space-between; gap: 16px; padding: 5px 0; border-top: 1px solid var(--line); font-size: 14px; }
+.pstack dt { color: var(--steel); min-width: 0; }
+.pstack dd { margin: 0; flex: none; max-width: 60%; font-weight: 560; text-align: right; font-feature-settings: 'tnum' 1; overflow-wrap: break-word; }
 
 /* ───────────────────────── Advantages ───────────────────────── */
 .adv { padding: clamp(80px, 14vh, 160px) var(--gutter); background: var(--paper-2); }
@@ -720,6 +730,10 @@ ol, ul { padding: 0; list-style: none; }
   .items__grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .it__stamp { flex-direction: column; gap: 2px; }
   .isheet__draw { padding: 22px 16px 14px; }
+  .isheet .sheet__inner { grid-template-rows: 38vh auto; }
+  .has-stack .ptable { display: none; }
+  .has-stack .pstack { display: block; }
+  .ptable { position: relative; }
   .it__group { display: none; }
 }
 

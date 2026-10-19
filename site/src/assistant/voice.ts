@@ -305,3 +305,137 @@ export function speak(text: string, h: SpeakHandlers): { stop(): void } {
 }
 
 export const stopSpeaking = () => speaking?.stop();
+
+export interface SpeechStream {
+  /** a new piece of the answer as it streams in */
+  push(text: string): void;
+  /** the answer was withdrawn by the server: drop what is queued and what is being said */
+  reset(): void;
+  /** no more text will come: say the rest, then report the end */
+  end(): void;
+  stop(): void;
+  readonly active: boolean;
+}
+
+/**
+ * Speaks an answer while it is still being written: every finished sentence is queued for the
+ * speech engine at once, so the voice starts with the first sentence instead of after the whole
+ * answer. `onEnd` fires only after `end()` and the last queued sentence.
+ */
+export function speakStream(h: SpeakHandlers): SpeechStream {
+  speaking?.stop();
+  let over = false;
+  let ended = false;
+  let started = false;
+  let generation = 0;
+  let buffer = '';
+  let inFlight = 0;
+  let voice: SpeechSynthesisVoice | null | undefined;
+  let endedAt = 0;
+  const waiting: string[] = [];
+  let watchdog = 0;
+
+  const finish = (reason: Parameters<SpeakHandlers['onEnd']>[0]) => {
+    if (over) return;
+    over = true;
+    clearInterval(watchdog);
+    if (reason !== 'finished') speechSynthesis.cancel();
+    if (speaking === stream) speaking = null;
+    h.onEnd(reason);
+  };
+  const check = () => {
+    if (!over && ended && inFlight === 0 && !waiting.length && !buffer.trim()) finish('finished');
+  };
+  const utter = (part: string) => {
+    const gen = generation;
+    const u = new SpeechSynthesisUtterance(part);
+    u.voice = voice!;
+    u.lang = voice!.lang;
+    inFlight++;
+    u.onstart = () => {
+      if (over || gen !== generation || started) return;
+      started = true;
+      h.onStart();
+    };
+    u.onboundary = e => {
+      if (!over && gen === generation && e.name === 'word') h.onWord(e.charLength || 5);
+    };
+    const done = () => {
+      if (gen !== generation) return; // cancelled by reset(): already accounted for
+      inFlight = Math.max(0, inFlight - 1);
+      check();
+    };
+    u.onend = done;
+    u.onerror = e => {
+      if (gen !== generation) return;
+      if (e.error === 'interrupted' || e.error === 'canceled') return done();
+      finish('failed');
+    };
+    speechSynthesis.speak(u);
+  };
+  const enqueue = (raw: string) => {
+    const part = toPlain(raw).trim();
+    if (!part) return;
+    if (voice === undefined) waiting.push(part);
+    else if (voice) utter(part);
+  };
+  // whole sentences are spoken as soon as they are complete; the tail waits for more text
+  const flush = (all: boolean) => {
+    while (true) {
+      const m = buffer.match(/^[\s\S]*?[.!?…:;](?=\s)|^[\s\S]*?\n/);
+      if (!m || (m[0].trim().length < 2 && !all)) break;
+      enqueue(m[0]);
+      buffer = buffer.slice(m[0].length);
+    }
+    if (all) {
+      enqueue(buffer);
+      buffer = '';
+    }
+  };
+
+  const stream: SpeechStream = {
+    push(text) {
+      if (over) return;
+      buffer += text;
+      flush(false);
+    },
+    reset() {
+      if (over) return;
+      generation++;
+      inFlight = 0;
+      waiting.length = 0;
+      buffer = '';
+      speechSynthesis.cancel();
+    },
+    end() {
+      if (over || ended) return;
+      ended = true;
+      endedAt = Date.now();
+      flush(true);
+      check();
+    },
+    stop() {
+      finish('stopped');
+    },
+    get active() {
+      return !over;
+    },
+  };
+  speaking = stream;
+
+  void russianVoice().then(v => {
+    if (over) return;
+    if (!v) return finish('no-voice');
+    voice = v;
+    speechSynthesis.cancel();
+    waiting.splice(0).forEach(utter);
+    check();
+  });
+  // some engines never fire `end`: once everything is said and the queue is empty, it is over
+  watchdog = window.setInterval(() => {
+    if (!ended || speechSynthesis.speaking || speechSynthesis.pending) return;
+    if (started) finish('finished');
+    else if (voice && Date.now() - endedAt > 3000) finish(inFlight ? 'failed' : 'finished');
+  }, 700);
+  return stream;
+}

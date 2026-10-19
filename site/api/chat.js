@@ -62,7 +62,7 @@ function readConfig(env) {
 		gemini: {
 			apiKey: geminiKey,
 			baseUrl: env.GEMINI_BASE_URL?.trim() || "https://generativelanguage.googleapis.com",
-			thinkingLevel: levels.includes(level) ? level : "low"
+			thinkingLevel: levels.includes(level) ? level : "minimal"
 		},
 		ollama: {
 			baseUrl,
@@ -811,6 +811,8 @@ function classify$1(status, code) {
 	if (status === 503) return new ProviderError("unavailable", detail, status);
 	return new ProviderError("provider", detail, status);
 }
+/** models that refused the "minimal" thinking level (kept for the life of the function instance) */
+const noMinimal = /* @__PURE__ */ new Set();
 function createGeminiClient(o) {
 	const doFetch = o.fetch ?? fetch;
 	const base = o.baseUrl.replace(/\/+$/, "");
@@ -834,6 +836,7 @@ function createGeminiClient(o) {
 				options?.signal?.addEventListener("abort", onAbort, { once: true });
 				const cancelled = () => options?.signal?.aborted === true;
 				const tools = (body.tools ?? []).filter((t) => "input_schema" in t);
+				let level = o.thinkingLevel === "minimal" && noMinimal.has(body.model) ? "low" : o.thinkingLevel;
 				const last = body.messages[body.messages.length - 1];
 				const results = typeof last.content === "string" ? [] : last.content.filter((b) => b.type === "tool_result");
 				const request = {
@@ -844,7 +847,7 @@ function createGeminiClient(o) {
 					generation_config: {
 						temperature: .2,
 						max_output_tokens: Math.min(body.max_tokens ?? MAX_OUTPUT_TOKENS, MAX_OUTPUT_TOKENS),
-						thinking_level: o.thinkingLevel
+						thinking_level: level
 					}
 				};
 				if (results.length) {
@@ -865,17 +868,25 @@ function createGeminiClient(o) {
 				}] : []);
 				try {
 					let res;
+					const send = () => doFetch(`${base}/v1beta/interactions?alt=sse`, {
+						method: "POST",
+						headers: {
+							"Content-Type": "application/json",
+							"x-goog-api-key": o.apiKey
+						},
+						body: JSON.stringify(request),
+						signal: timeout.signal,
+						redirect: "error"
+					});
 					try {
-						res = await doFetch(`${base}/v1beta/interactions?alt=sse`, {
-							method: "POST",
-							headers: {
-								"Content-Type": "application/json",
-								"x-goog-api-key": o.apiKey
-							},
-							body: JSON.stringify(request),
-							signal: timeout.signal,
-							redirect: "error"
-						});
+						res = await send();
+						if (res.status === 400 && level === "minimal") {
+							level = "low";
+							noMinimal.add(body.model);
+							request.generation_config.thinking_level = level;
+							await res.body?.cancel().catch(() => {});
+							res = await send();
+						}
 					} catch (e) {
 						if (cancelled()) throw e;
 						throw new ProviderError(timedOut ? "timeout" : "unavailable", "cannot reach the Gemini API");

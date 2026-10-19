@@ -20,7 +20,8 @@ export interface Item {
   series: boolean;
   note: string;
   tables: Cell[][][];
-  keys: { mass?: number; H?: number };
+  /** stated by the source unambiguously; doc = drawing, album or series number */
+  keys: { mass?: number; H?: number; doc?: string };
 }
 export interface Group { id: string; title: string; items: Item[] }
 export interface Category { id: string; title: string; groups: Group[] }
@@ -54,6 +55,7 @@ function card(e: Entry, i: number, showGroup: boolean) {
   return `<li style="--i:${i % PAGE}"><button class="it" type="button" data-item="${esc(it.slug)}" aria-label="${esc(it.name)} — открыть лист">
     <span class="it__draw">${fig}</span>
     <span class="it__stamp"><b>${esc(it.mark)}</b>${meta ? `<span>${esc(meta)}</span>` : ''}</span>
+    ${it.keys.doc ? `<span class="it__doc">Чертёж ${esc(it.keys.doc)}</span>` : ''}
     ${showGroup ? `<span class="it__group">${esc(e.group.title)}</span>` : ''}
   </button></li>`;
 }
@@ -168,6 +170,40 @@ function tableHtml(rows: Cell[][]) {
   return `<div class="ptable"><table><thead><tr>${head.map(c => cell(c, 'th')).join('')}</tr></thead><tbody>${body.map(r => `<tr>${r.map(c => cell(c, 'td')).join('')}</tr>`).join('')}</tbody></table></div>`;
 }
 
+/**
+ * The same table as one block per row, "column: value" — for phones, where a table of 5–8
+ * columns cannot be read. Row spans are followed so every value gets its own column's name;
+ * a spanned value (e.g. the total mass of a bill of materials) is shown once, in its first row.
+ * Tables with a two-row header are left as tables (their columns cannot be named reliably).
+ */
+function stackHtml(rows: Cell[][]): string | null {
+  const [head, ...body] = rows;
+  if (head.some(c => (c.cs ?? 1) > 1 || (c.rs ?? 1) > 1)) return null;
+  const labels = head.map(c => c.t);
+  const n = labels.length;
+  const busy = new Array<number>(n).fill(0);
+  const blocks: string[] = [];
+  for (const row of body) {
+    let col = 0;
+    const pairs: [string, string][] = [];
+    for (const c of row) {
+      while (col < n && busy[col] > 0) busy[col++]--;
+      pairs.push([labels[col] ?? '', c.t]);
+      if ((c.rs ?? 1) > 1 && col < n) busy[col] = (c.rs ?? 1) - 1;
+      col += c.cs ?? 1;
+    }
+    for (; col < n; col++) if (busy[col] > 0) busy[col]--;
+    if (!pairs.length) continue;
+    const [first, ...rest] = pairs;
+    blocks.push(
+      `<div class="pstack__row"><p class="pstack__t"><span>${esc(first[0])}</span>${esc(first[1])}</p><dl>${rest
+        .map(([l, v]) => `<div><dt>${esc(l)}</dt><dd>${esc(v)}</dd></div>`)
+        .join('')}</dl></div>`,
+    );
+  }
+  return `<div class="pstack">${blocks.join('')}</div>`;
+}
+
 function fill(e: Entry) {
   const it = e.item;
   const s = el();
@@ -185,7 +221,13 @@ function fill(e: Entry) {
   const note = $('[data-isheet-note]', s)!;
   note.textContent = it.note;
   note.hidden = !it.note;
-  $('[data-isheet-tables]', s)!.innerHTML = it.tables.map(tableHtml).join('');
+  // each table twice: as a table (wide screens) and stacked by row (phones); CSS shows one
+  $('[data-isheet-tables]', s)!.innerHTML = it.tables
+    .map(t => {
+      const stack = stackHtml(t);
+      return stack ? `<div class="ptables has-stack">${tableHtml(t)}${stack}</div>` : tableHtml(t);
+    })
+    .join('');
   const img = $<HTMLImageElement>('[data-isheet-img]', s)!;
   const none = $('[data-isheet-none]', s)!;
   if (it.draw) {
@@ -237,6 +279,8 @@ export function openItem(slug: string, from: HTMLImageElement | null = null, pus
 function swap(e: Entry, dir = 0) {
   if (e === current) return;
   current = e;
+  // reached by a link from another series: step through that item's own series
+  if (!order.includes(e)) order = list.includes(e) ? list : all.filter(x => x.group === e.group);
   history.replaceState({ item: e.item.slug }, '', `#/izdelie/${e.item.slug}`);
   tl?.progress(1).kill();
   if (reducedMotion || !dir) return fill(e);

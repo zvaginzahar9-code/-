@@ -26,6 +26,6 @@ export const bySlug = new Map(towers.map(t => [t.slug, t]));
 export const maxH = Math.max(...towers.map(t => t.H));
 export const KV = [35, 110, 220, 330, 500];
 
-export { normMark, esc } from './text';
+export { normMark, esc } from './text.ts';
 
 export const kvLabel = (kv: number) => `Стальная опора ВЛ ${kv} кВ`;

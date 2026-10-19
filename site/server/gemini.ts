@@ -86,6 +86,9 @@ function classify(status: number, code: string | undefined): ProviderError {
   return new ProviderError('provider', detail, status);
 }
 
+/** models that refused the "minimal" thinking level (kept for the life of the function instance) */
+const noMinimal = new Set<string>();
+
 export function createGeminiClient(o: GeminiOptions): ModelClient {
   const doFetch = o.fetch ?? fetch;
   const base = o.baseUrl.replace(/\/+$/, '');
@@ -112,6 +115,7 @@ export function createGeminiClient(o: GeminiOptions): ModelClient {
             options?.signal?.addEventListener('abort', onAbort, { once: true });
             const cancelled = () => options?.signal?.aborted === true;
             const tools = (body.tools ?? []).filter((t): t is Tool => 'input_schema' in t);
+            let level = o.thinkingLevel === 'minimal' && noMinimal.has(body.model) ? 'low' : o.thinkingLevel;
 
             // either a new question (the dialogue so far) or the results of the calls just made
             const last = body.messages[body.messages.length - 1];
@@ -121,7 +125,7 @@ export function createGeminiClient(o: GeminiOptions): ModelClient {
               system_instruction: typeof body.system === 'string' ? body.system : '',
               tools: declare(tools),
               stream: true,
-              generation_config: { temperature: 0.2, max_output_tokens: Math.min(body.max_tokens ?? MAX_OUTPUT_TOKENS, MAX_OUTPUT_TOKENS), thinking_level: o.thinkingLevel },
+              generation_config: { temperature: 0.2, max_output_tokens: Math.min(body.max_tokens ?? MAX_OUTPUT_TOKENS, MAX_OUTPUT_TOKENS), thinking_level: level },
             };
             if (results.length) {
               const origin = results.map(r => pending.get(r.tool_use_id)).find(Boolean);
@@ -141,14 +145,24 @@ export function createGeminiClient(o: GeminiOptions): ModelClient {
 
             try {
               let res: Response;
-              try {
-                res = await doFetch(`${base}/v1beta/interactions?alt=sse`, {
+              const send = () =>
+                doFetch(`${base}/v1beta/interactions?alt=sse`, {
                   method: 'POST',
                   headers: { 'Content-Type': 'application/json', 'x-goog-api-key': o.apiKey },
                   body: JSON.stringify(request),
                   signal: timeout.signal,
                   redirect: 'error',
                 });
+              try {
+                res = await send();
+                // a model that does not take the "minimal" thinking level gets "low" from now on
+                if (res.status === 400 && level === 'minimal') {
+                  level = 'low';
+                  noMinimal.add(body.model);
+                  (request.generation_config as Record<string, unknown>).thinking_level = level;
+                  await res.body?.cancel().catch(() => {});
+                  res = await send();
+                }
               } catch (e) {
                 if (cancelled()) throw e;
                 throw new ProviderError(timedOut ? 'timeout' : 'unavailable', 'cannot reach the Gemini API');

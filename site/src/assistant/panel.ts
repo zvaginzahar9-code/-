@@ -7,7 +7,7 @@ import { renderInto, toPlain } from './markdown';
 import { LIMITS, type ChatTurn, type InquiryDraft, type ServerEvent, type UiAction } from './protocol';
 import { sendTurn } from './stream';
 import { ICON, comparison, inquiryCard, productCard, productList } from './views';
-import { LISTEN_MESSAGES, listen, speak, stopSpeaking, voiceSupport, type Listener } from './voice';
+import { LISTEN_MESSAGES, listen, speak, speakStream, stopSpeaking, voiceSupport, type Listener, type SpeechStream } from './voice';
 import { createWire } from './wire';
 
 export interface PanelDeps {
@@ -112,6 +112,8 @@ export function createPanel(deps: PanelDeps) {
   let abort: AbortController | null = null;
   let listener: Listener | null = null;
   let speakReplies = true;
+  /** the voice reading the current answer while it is being written (voice mode only) */
+  let talk: SpeechStream | null = null;
   let statusOverride = '';
 
   // ── state ────────────────────────────────────────────────
@@ -330,10 +332,12 @@ export function createPanel(deps: PanelDeps) {
         break;
       case 'retract':
         view.retract();
+        talk?.reset(); // what was withdrawn must not go on being said
         break;
       case 'text':
         machine.send('FIRST_TEXT');
         view.text(event.d);
+        talk?.push(event.d);
         wire.pluck(event.d.length / 14);
         break;
       case 'products':
@@ -378,18 +382,27 @@ export function createPanel(deps: PanelDeps) {
     const mine = abort;
     machine.send('SUBMIT');
     view.wait('Обрабатываю запрос');
+    // in voice mode the answer is read out as it is written, sentence by sentence
+    talk = open && panel.dataset.mode === 'voice' && speakReplies && support.speak && !listener ? startTalk() : null;
+    const myTalk = talk;
     const result = await sendTurn(history(), { signal: mine.signal, onEvent: e => onEvent(e, view) });
     if (abort === mine) abort = null;
     // the dialog was reset while this turn was in flight: it no longer owns the interface
-    if (!messages.includes(view.message)) return;
+    if (!messages.includes(view.message)) return void myTalk?.stop();
     view.end();
-    if (result.ok && !view.message.text.trim() && !view.message.notes.length && !$('.msg__block', view.el)) {
+    const empty = result.ok && !view.message.text.trim() && !view.message.notes.length && !$('.msg__block', view.el);
+    if (!result.ok || empty) myTalk?.stop();
+    if (empty) {
       fail(view, 'Ответ пришёл пустым. Попробуйте переформулировать вопрос.');
     } else if (result.ok) {
       machine.send('DONE');
       announce(`Ответ ассистента: ${toPlain(view.message.text).slice(0, 220) || 'показаны данные из каталога'}`);
       if (!open) deps.setUnread(true);
-      if (open && panel.dataset.mode === 'voice' && speakReplies && view.message.text.trim()) say(view.message.text);
+      if (myTalk?.active) {
+        myTalk.end();
+        // the text is complete but the voice is still reading: the state says so
+        if (myTalk.active) machine.send('SPEAK_START');
+      }
     } else if (result.aborted) {
       machine.send('CANCEL');
       view.block('<p class="msg__meta">Ответ остановлен.</p>', 'Пользователь остановил ответ');
@@ -430,6 +443,25 @@ export function createPanel(deps: PanelDeps) {
   }
 
   // ── voice ────────────────────────────────────────────────
+  function startTalk(): SpeechStream {
+    const s: SpeechStream = speakStream({
+      // while the answer is still streaming the state stays "responding"; it becomes
+      // "speaking" when the text is complete and the voice is still going (see submit)
+      onStart: () => {
+        if (machine.state === 'idle') machine.send('SPEAK_START');
+      },
+      onWord: length => wire.pluck(0.35 + length / 14),
+      onEnd(reason) {
+        if (talk === s) talk = null;
+        if (machine.state === 'speaking') machine.send('SPEAK_END');
+        if (reason === 'no-voice') setNotice('В браузере нет русского голоса — ответ показан только текстом.');
+        else if (reason === 'failed') setNotice('Не удалось озвучить ответ — он показан текстом.');
+        syncControls();
+      },
+    });
+    return s;
+  }
+
   function say(text: string) {
     if (!support.speak || isBusy(machine.state) || listener) return;
     speak(text, {
@@ -516,7 +548,7 @@ export function createPanel(deps: PanelDeps) {
   });
   $('[data-voice-text]', panel)!.addEventListener('click', () => setMode('text'));
   voiceSound.addEventListener('click', () => {
-    if (machine.state === 'speaking') stopSpeaking();
+    if (machine.state === 'speaking' || talk?.active) stopSpeaking();
     else speakReplies = !speakReplies;
     syncControls();
   });

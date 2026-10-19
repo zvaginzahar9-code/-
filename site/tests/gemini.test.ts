@@ -95,7 +95,7 @@ describe('a turn through Gemini', () => {
     expect(r.url).toBe('https://generativelanguage.googleapis.com/v1beta/interactions?alt=sse');
     expect(r.headers['x-goog-api-key']).toBe('AIza-test-key');
     expect(r.url + JSON.stringify(r.body) + JSON.stringify(events)).not.toContain('AIza-test-key');
-    expect(r.body).toMatchObject({ model: 'gemini-3.5-flash-lite', stream: true, generation_config: { thinking_level: 'low' } });
+    expect(r.body).toMatchObject({ model: 'gemini-3.5-flash-lite', stream: true, generation_config: { thinking_level: 'minimal' } });
     expect(r.body.system_instruction).toContain('Навигатор');
     expect(r.body.tools).toHaveLength(8);
     expect(r.body.tools[0]).toMatchObject({ type: 'function', name: 'search_catalog' });
@@ -140,6 +140,14 @@ describe('a turn through Gemini', () => {
     const broken = [created('i1'), { event_type: 'step.start', index: 0, step: { type: 'function_call', id: 'fc_1', name: 'search_catalog' } }, { event_type: 'step.delta', index: 0, delta: { type: 'arguments', partial_arguments: '{"voltage_kv":1' } }, { event_type: 'interaction.status_update', status: 'requires_action' }];
     const r = await chat(fakeGemini([broken, answer('i2', 'Уточните.')]).fetch);
     expect(r.kinds).toEqual(['done']); // no unfiltered cards
+  });
+
+  it('falls back to the "low" thinking level once when a model refuses "minimal"', async () => {
+    const refused = new Response(JSON.stringify({ error: { code: 'invalid_argument', message: 'thinking_level' } }), { status: 400 });
+    const { fetch, requests } = fakeGemini([refused, answer('i1', 'Да.')]);
+    const { text } = await chat(fetch, 'Привет', { ...ENV, ASSISTANT_MODEL: 'gemini-test-no-minimal' });
+    expect(text).toBe('Да.');
+    expect(requests.map(r => r.body.generation_config.thinking_level)).toEqual(['minimal', 'low']);
   });
 
   // seen on the published site: the call opened with an empty `arguments: {}` and the tools ran

@@ -48,7 +48,7 @@ export function readConfig(env: Record<string, string | undefined>): AssistantCo
     configured: provider === 'ollama' ? baseUrl !== null : provider === 'gemini' ? geminiKey !== null : apiKey !== null,
     apiKey,
     effort: EFFORTS.includes(effort) ? effort : 'low',
-    gemini: { apiKey: geminiKey, baseUrl: env.GEMINI_BASE_URL?.trim() || 'https://generativelanguage.googleapis.com', thinkingLevel: levels.includes(level) ? level : 'low' },
+    gemini: { apiKey: geminiKey, baseUrl: env.GEMINI_BASE_URL?.trim() || 'https://generativelanguage.googleapis.com', thinkingLevel: levels.includes(level) ? level : 'minimal' },
     ollama: { baseUrl, apiKey: env.OLLAMA_API_KEY?.trim() || null, numCtx: Number.isInteger(numCtx) && numCtx >= 2048 && numCtx <= 65536 ? numCtx : 8192, keepAlive: /^-?\d+[smh]?$/.test(env.OLLAMA_KEEP_ALIVE?.trim() ?? '') ? env.OLLAMA_KEEP_ALIVE!.trim() : '30m', think: env.ASSISTANT_THINK === '1', toolMode },
   };
 }

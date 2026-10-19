@@ -191,10 +191,18 @@ export function createGeminiClient(o: GeminiOptions): ModelClient {
                   } else if (e.delta.type === 'arguments' && typeof e.index === 'number') {
                     const call = calls.get(e.index);
                     if (call) {
+                      // arguments come either as JSON text in pieces or as a whole object
                       if (typeof e.delta.partial_arguments === 'string') call.args += e.delta.partial_arguments;
-                      else if (e.delta.arguments !== undefined) call.parsed = e.delta.arguments;
+                      else if (typeof e.delta.arguments === 'string') call.args += e.delta.arguments;
+                      else if (e.delta.arguments && typeof e.delta.arguments === 'object') call.parsed = { ...(call.parsed as object), ...(e.delta.arguments as object) };
                     }
                   }
+                } else if (kind === 'step.stop' && typeof e.index === 'number' && e.step?.arguments !== undefined) {
+                  // a closing step may repeat the call in full
+                  const call = calls.get(e.index);
+                  const a = e.step.arguments;
+                  if (call && a && typeof a === 'object' && Object.keys(a).length) call.parsed = { ...(call.parsed as object), ...(a as object) };
+                  else if (call && typeof a === 'string' && a.trim() && !call.args.trim()) call.args = a;
                 } else if (kind === 'error') failure = e.error ?? { code: 'api_error' };
               };
 
@@ -241,10 +249,14 @@ export function createGeminiClient(o: GeminiOptions): ModelClient {
               const made = [...calls.values()].filter(c => c.id && c.name);
               if (text.trim() && !made.length) blocks.push({ type: 'text', text, citations: null });
               for (const call of made) {
+                // The streamed text wins over an object given up front: the step may open with an
+                // empty `arguments: {}` and then deliver the real ones in pieces.
                 let input: unknown = call.parsed;
-                if (input === undefined && call.args) {
+                if (typeof input === 'string') call.args = input + call.args;
+                if (call.args.trim()) {
                   try {
-                    input = JSON.parse(call.args);
+                    const fromText = JSON.parse(call.args) as unknown;
+                    input = input && typeof input === 'object' ? { ...(input as object), ...(fromText as object) } : fromText;
                   } catch {
                     input = call.args; // left as a string: the tool refuses it rather than running without conditions
                   }

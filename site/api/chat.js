@@ -925,9 +925,21 @@ function createGeminiClient(o) {
 								const call = calls.get(e.index);
 								if (call) {
 									if (typeof e.delta.partial_arguments === "string") call.args += e.delta.partial_arguments;
-									else if (e.delta.arguments !== void 0) call.parsed = e.delta.arguments;
+									else if (typeof e.delta.arguments === "string") call.args += e.delta.arguments;
+									else if (e.delta.arguments && typeof e.delta.arguments === "object") call.parsed = {
+										...call.parsed,
+										...e.delta.arguments
+									};
 								}
 							}
+						} else if (kind === "step.stop" && typeof e.index === "number" && e.step?.arguments !== void 0) {
+							const call = calls.get(e.index);
+							const a = e.step.arguments;
+							if (call && a && typeof a === "object" && Object.keys(a).length) call.parsed = {
+								...call.parsed,
+								...a
+							};
+							else if (call && typeof a === "string" && a.trim() && !call.args.trim()) call.args = a;
 						} else if (kind === "error") failure = e.error ?? { code: "api_error" };
 					};
 					let buffer = "";
@@ -981,8 +993,13 @@ function createGeminiClient(o) {
 					});
 					for (const call of made) {
 						let input = call.parsed;
-						if (input === void 0 && call.args) try {
-							input = JSON.parse(call.args);
+						if (typeof input === "string") call.args = input + call.args;
+						if (call.args.trim()) try {
+							const fromText = JSON.parse(call.args);
+							input = input && typeof input === "object" ? {
+								...input,
+								...fromText
+							} : fromText;
 						} catch {
 							input = call.args;
 						}

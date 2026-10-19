@@ -141,6 +141,40 @@ describe('a turn through Gemini', () => {
     expect(r.kinds).toEqual(['done']); // no unfiltered cards
   });
 
+  // seen on the published site: the call opened with an empty `arguments: {}` and the tools ran
+  // without any conditions ("no П110-2", all 112 towers) — the streamed arguments must win
+  it('takes the streamed arguments when the call step opens with an empty object', async () => {
+    const empty = [
+      created('i1'),
+      { event_type: 'step.start', index: 0, step: { type: 'function_call', id: 'fc_1', name: 'get_tower_details', arguments: {} } },
+      { event_type: 'step.delta', index: 0, delta: { type: 'arguments', partial_arguments: '{"mark":' } },
+      { event_type: 'step.delta', index: 0, delta: { type: 'arguments', partial_arguments: '"П110-2"}' } },
+      { event_type: 'step.stop', index: 0 },
+      { event_type: 'interaction.status_update', status: 'requires_action' },
+    ];
+    const r = await chat(fakeGemini([empty, answer('i2', 'Вот.')]).fetch, 'Покажи характеристики П110-2');
+    expect(r.kinds).toEqual(['details', 'done']);
+  });
+
+  it('takes arguments sent as text in `arguments` or repeated whole when the step closes', async () => {
+    const asText = [
+      created('i1'),
+      { event_type: 'step.start', index: 0, step: { type: 'function_call', id: 'fc_1', name: 'search_catalog', arguments: {} } },
+      { event_type: 'step.delta', index: 0, delta: { type: 'arguments', arguments: '{"voltage_kv":' } },
+      { event_type: 'step.delta', index: 0, delta: { type: 'arguments', arguments: '110}' } },
+      { event_type: 'interaction.status_update', status: 'requires_action' },
+    ];
+    const a = await chat(fakeGemini([asText, answer('i2', 'Вот.')]).fetch);
+    expect((a.events.find(e => e.t === 'products') as Extract<ServerEvent, { t: 'products' }>).items.every(i => i.kv === 110)).toBe(true);
+    const onStop = [
+      created('i1'),
+      { event_type: 'step.start', index: 0, step: { type: 'function_call', id: 'fc_1', name: 'get_tower_details', arguments: {} } },
+      { event_type: 'step.stop', index: 0, step: { type: 'function_call', id: 'fc_1', name: 'get_tower_details', arguments: { mark: 'П110-2' } } },
+      { event_type: 'interaction.status_update', status: 'requires_action' },
+    ];
+    expect((await chat(fakeGemini([onStop, answer('i2', 'Вот.')]).fetch, 'Покажи характеристики П110-2')).kinds).toEqual(['details', 'done']);
+  });
+
   it('reports a cut-off answer and a blocked one for what they are', async () => {
     const cut = [...answer('i1', 'Начало').slice(0, -1), completed('i1', 'incomplete')];
     expect((await chat(fakeGemini([cut]).fetch)).events.at(-1)).toEqual({ t: 'done', stop: 'max_tokens' });

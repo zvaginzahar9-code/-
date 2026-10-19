@@ -1,0 +1,58 @@
+{
+ "model": "mistral:latest",
+ "scenario": "S6",
+ "title": "действие, на которое инструмент отвечает ошибкой",
+ "runs": 2,
+ "passed": 2,
+ "fails": [
+  [],
+  []
+ ],
+ "totals": {
+  "turns": 2,
+  "ms": 10282,
+  "firstMs": 5181,
+  "guard": 0,
+  "errors": 0
+ },
+ "memory": {
+  "loaded": "mistral:latest 5.2 ГБ (VRAM 3.9 ГБ, ctx 8192)",
+  "names": [
+   "mistral:latest"
+  ],
+  "commitFreeMB": 1067,
+  "ramFreeMB": 8065,
+  "modelProcessMB": "8937",
+  "vramUsedMB": "4607"
+ },
+ "turns": [
+  {
+   "model": "mistral:latest",
+   "scenario": "S6",
+   "run": 1,
+   "turn": 1,
+   "say": "Открой чертёж опоры П999-9",
+   "ms": 4710,
+   "firstMs": 3229,
+   "events": [
+    "done:end"
+   ],
+   "text": " Лист опоры П999-9 не открыт. В каталоге такой марки нет.",
+   "problems": []
+  },
+  {
+   "model": "mistral:latest",
+   "scenario": "S6",
+   "run": 2,
+   "turn": 1,
+   "say": "Открой чертёж опоры П999-9",
+   "ms": 5572,
+   "firstMs": 1952,
+   "events": [
+    "done:end"
+   ],
+   "text": " Лист опоры П999-9 не открыт, так как такой марки в каталоге нет. Пожалуйста, попробуйте сменить марку или обратитесь за помощью в подготовке заявки на расчёт.",
+   "problems": []
+  }
+ ]
+}

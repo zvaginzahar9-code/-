@@ -1,5 +1,7 @@
-import { defineConfig, type Plugin } from 'vite';
+import { defineConfig, loadEnv, type Connect, type Plugin } from 'vite';
 import { readFileSync } from 'node:fs';
+import type { ServerResponse } from 'node:http';
+import { handle } from './server/handler.ts';
 
 interface Item { slug: string; mark: string; kv: number; H: number | null; h: number | null; L: number | null; mass: number | null; project: string | null }
 
@@ -23,9 +25,55 @@ function catalogTable(): Plugin {
   };
 }
 
-export default defineConfig({
+/**
+ * Serves the assistant endpoint (api/chat.ts, a Vercel Function in production) from the
+ * dev and preview servers. ASSISTANT_FAKE=1 swaps the model for a scripted double so the
+ * interface can be exercised without an API key; that path does not exist in the deployed function.
+ */
+function assistantApi(mode: string): Plugin {
+  const env = { ...loadEnv(mode, process.cwd(), ''), ...process.env };
+  const fake = env.ASSISTANT_FAKE === '1' ? import('./tests/fake-model.ts').then(m => m.demoClient().client) : null;
+  const middleware: Connect.NextHandleFunction = async (req, res: ServerResponse, next) => {
+    if (!req.url?.startsWith('/api/chat')) return next();
+    try {
+      const chunks: Buffer[] = [];
+      let size = 0;
+      for await (const c of req) {
+        size += (c as Buffer).length;
+        if (size > 200_000) {
+          res.statusCode = 413;
+          return void res.end();
+        }
+        chunks.push(c as Buffer);
+      }
+      const headers = new Headers();
+      for (const [k, v] of Object.entries(req.headers)) if (typeof v === 'string') headers.set(k, v);
+      const abort = new AbortController();
+      res.on('close', () => abort.abort());
+      const body = req.method === 'GET' || req.method === 'HEAD' ? undefined : Buffer.concat(chunks);
+      const request = new Request(`http://${req.headers.host}${req.url}`, { method: req.method, headers, body, signal: abort.signal });
+      const client = await fake;
+      const response = await handle(request, client ? { env: { ...env, ASSISTANT_PROVIDER: 'anthropic', ANTHROPIC_API_KEY: 'fake' }, createClient: () => client, limit: () => ({ ok: true, retryAfter: 0 }) } : { env });
+      res.statusCode = response.status;
+      response.headers.forEach((v, k) => res.setHeader(k, v));
+      if (!response.body) return void res.end();
+      for await (const chunk of response.body as unknown as AsyncIterable<Uint8Array>) res.write(chunk);
+      res.end();
+    } catch {
+      if (!res.headersSent) res.statusCode = 500;
+      res.end();
+    }
+  };
+  return {
+    name: 'assistant-api',
+    configureServer: server => void server.middlewares.use(middleware),
+    configurePreviewServer: server => void server.middlewares.use(middleware),
+  };
+}
+
+export default defineConfig(({ mode }) => ({
   base: './',
-  plugins: [catalogTable()],
+  plugins: [catalogTable(), assistantApi(mode)],
   build: {
     target: 'es2020',
     assetsInlineLimit: 2048,
@@ -38,4 +86,4 @@ export default defineConfig({
         .map(h => [h.key, h.key === 'Content-Security-Policy' ? h.value.replace('; upgrade-insecure-requests', '') : h.value]),
     ),
   },
-});
+}));

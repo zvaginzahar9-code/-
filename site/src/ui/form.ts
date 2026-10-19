@@ -59,10 +59,10 @@ export function initForm() {
   });
 }
 
-/** Prefill the request with tower marks chosen in the catalogue. */
-export function prefillRequest(marks: string[]) {
+/** Prefill the request with marks chosen in the catalogue (towers by default). */
+export function prefillRequest(marks: string[], label = 'Опоры') {
   const ta = $<HTMLTextAreaElement>('[data-form-message]');
   if (!ta) return;
-  const line = `Опоры: ${marks.join(', ')} — количество: `;
+  const line = `${label}: ${marks.join(', ')} — количество: `;
   if (!ta.value.includes(line)) ta.value = (ta.value ? ta.value + '\n' : '') + line;
 }

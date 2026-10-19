@@ -4,8 +4,11 @@
   "description": "",
   "scripts": {
     "dev": "vite",
-    "build": "vite build",
+    "build": "npm run build:api && vite build",
+    "build:api": "node scripts/build_api.mjs",
     "preview": "vite preview --port 4319",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
     "data": "python -I scripts/build_data.py ../research . && python -I scripts/trace.py src/data/catalog.json ../research/competitor/images public/catalog && node scripts/raster.cjs public/catalog 520 && python -I scripts/webp.py public/catalog && python -I scripts/build_photos.py ../research . && node scripts/build_map.mjs"
   },
   "keywords": [],
@@ -13,6 +16,7 @@
   "license": "ISC",
   "type": "module",
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.133.0",
     "@fontsource-variable/geologica": "^5.3.0",
     "@fontsource/ibm-plex-mono": "^5.3.0",
     "gsap": "^3.15.0",
@@ -20,6 +24,7 @@
     "three": "^0.186.1"
   },
   "devDependencies": {
+    "@types/node": "^26.6.5",
     "@types/three": "^0.186.0",
     "d3-geo": "^3.1.1",
     "playwright": "^1.64.0",
@@ -27,6 +32,7 @@
     "topojson-client": "^3.1.0",
     "typescript": "^7.0.2",
     "vite": "^8.3.4",
+    "vitest": "^5.0.3",
     "world-atlas": "^2.0.2"
   }
 }

@@ -24,6 +24,7 @@
     <nav class="nav" aria-label="Разделы">
       <a href="#production">Производство</a>
       <a href="#catalog">Каталог опор</a>
+      <a href="#items">Изделия</a>
       <a href="#experience">Опыт</a>
       <a href="#contacts">Контакты</a>
     </nav>
@@ -33,6 +34,7 @@
   <div class="mnav" id="mobile-nav" hidden data-mnav>
     <a href="#production">Производство</a>
     <a href="#catalog">Каталог опор</a>
+    <a href="#items">Изделия</a>
     <a href="#experience">Опыт</a>
     <a href="#contacts">Контакты</a>
     <a class="btn btn--signal" href="#request"><span>Рассчитать поставку</span></a>
@@ -201,11 +203,6 @@
           <h3>Порталы ошиновки распределительных устройств ОРУ, ПС</h3>
           <img class="plist__img" src="photo/substation.webp" alt="Порталы ошиновки на строящейся подстанции" loading="lazy" width="403" height="464" />
         </li>
-        <li class="plist__item" data-photo="photo/steel-frame.webp">
-          <h3>Строительные металлоконструкции</h3>
-          <p>промышленного и гражданского назначения любой сложности</p>
-          <img class="plist__img" src="photo/steel-frame.webp" alt="Каркас из стальных колонн и связей" loading="lazy" width="381" height="400" />
-        </li>
         <li class="plist__item" data-photo="photo/foundations.webp">
           <h3>Свайные фундаменты (ростверки)</h3>
           <img class="plist__img" src="photo/foundations.webp" alt="Оцинкованные ростверки с анкерными болтами" loading="lazy" width="477" height="367" />
@@ -267,6 +264,26 @@
         <p class="compare-tray__list" data-tray-list></p>
         <button class="btn btn--dark" type="button" data-compare-open><span>Сравнить</span></button>
         <button class="compare-tray__clear" type="button" data-compare-clear>Очистить</button>
+      </div>
+    </section>
+
+    <!-- 7б. ИЗДЕЛИЯ: мачты, молниеотводы, порталы, опоры контактной сети, узлы -->
+    <section class="items" id="items" aria-labelledby="items-t" data-items>
+      <div class="catalog__head">
+        <h2 class="h2" id="items-t">Мачты, порталы и&nbsp;узлы</h2>
+        <p class="catalog__lead">Прожекторные мачты, молниеотводы, порталы ОРУ, опоры контактной сети, детали свайных фундаментов и&nbsp;металлоконструкции 0,4–35&nbsp;кВ. Схемы перерисованы с&nbsp;типовых чертежей.</p>
+      </div>
+      <div class="items__bar">
+        <div class="items__tabs" role="tablist" aria-label="Категория изделий" data-items-tabs></div>
+        <label class="search"><span class="sr">Найти изделие по марке</span><input type="search" placeholder="Марка, например ТМ-1" autocomplete="off" data-items-search /></label>
+        <p class="catalog__count" aria-live="polite"><b data-items-shown>0</b> из <span data-items-total>0</span></p>
+      </div>
+      <div class="items__body">
+        <div class="items__groups" role="group" aria-label="Серии" data-items-groups></div>
+        <div class="items__main">
+          <ul class="items__grid" data-items-grid></ul>
+          <button class="btn btn--line items__more" type="button" data-items-more hidden><span>Показать ещё</span></button>
+        </div>
       </div>
     </section>
 
@@ -374,6 +391,38 @@
       <button type="button" class="sheet__arrow" data-sheet-next aria-label="Следующая опора"><svg viewBox="0 0 24 24"><path d="m9 5 7 7-7 7"/></svg></button>
     </div>
     <button type="button" class="sheet__close" data-sheet-close aria-label="Закрыть лист"><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18"/></svg></button>
+  </div>
+
+  <!-- Лист изделия (мачты, порталы, узлы) -->
+  <div class="sheet isheet" data-isheet hidden role="dialog" aria-modal="true" aria-labelledby="isheet-mark">
+    <svg class="sheet__frame" aria-hidden="true" data-isheet-frame preserveAspectRatio="none"><rect /></svg>
+    <div class="sheet__inner">
+      <div class="sheet__draw isheet__draw" data-isheet-draw>
+        <p class="sheet__mark-bg" aria-hidden="true" data-isheet-bg></p>
+        <figure class="isheet__fig" data-isheet-plot>
+          <img class="isheet__img" alt="" data-isheet-img />
+          <p class="isheet__none" data-isheet-none hidden>Чертёж этой марки<br />предоставим по запросу</p>
+        </figure>
+        <p class="isheet__cap" data-isheet-cap></p>
+      </div>
+      <div class="sheet__info">
+        <p class="sheet__kv" data-isheet-kind></p>
+        <h2 class="sheet__mark" id="isheet-mark" data-isheet-mark></h2>
+        <p class="isheet__name" data-isheet-name></p>
+        <div class="keys" data-isheet-keys></div>
+        <p class="isheet__note" data-isheet-note></p>
+        <div data-isheet-tables></div>
+        <div class="sheet__actions">
+          <a class="btn btn--signal" href="#request" data-isheet-request><span>Запросить расчёт</span></a>
+        </div>
+      </div>
+    </div>
+    <div class="sheet__nav">
+      <button type="button" class="sheet__arrow" data-isheet-prev aria-label="Предыдущее изделие"><svg viewBox="0 0 24 24"><path d="M15 5 8 12l7 7"/></svg></button>
+      <p class="sheet__pos" data-isheet-pos></p>
+      <button type="button" class="sheet__arrow" data-isheet-next aria-label="Следующее изделие"><svg viewBox="0 0 24 24"><path d="m9 5 7 7-7 7"/></svg></button>
+    </div>
+    <button type="button" class="sheet__close" data-isheet-close aria-label="Закрыть лист"><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18"/></svg></button>
   </div>
 
   <!-- Сравнение -->

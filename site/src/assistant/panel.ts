@@ -7,7 +7,7 @@ import { renderInto, toPlain } from './markdown';
 import { LIMITS, type ChatTurn, type InquiryDraft, type ServerEvent, type UiAction } from './protocol';
 import { sendTurn } from './stream';
 import { ICON, comparison, inquiryCard, productCard, productList } from './views';
-import { LISTEN_MESSAGES, listen, speak, speakStream, stopSpeaking, voiceSupport, type Listener, type SpeechStream } from './voice';
+import { LISTEN_MESSAGES, listen, primeAudio, speakStream, stopSpeaking, voiceSupport, type Listener, type SpeechStream } from './voice';
 import { createWire } from './wire';
 
 export interface PanelDeps {
@@ -372,6 +372,7 @@ export function createPanel(deps: PanelDeps) {
     const text = raw.trim().slice(0, LIMITS.maxUserChars);
     if (!text || isBusy(machine.state) || configured === false) return;
     stopSpeaking();
+    primeAudio();
     listener?.cancel();
     setNotice();
     // a retry offer belongs to the turn that failed: once a new one starts it is withdrawn
@@ -462,20 +463,26 @@ export function createPanel(deps: PanelDeps) {
     return s;
   }
 
+  /** "Озвучить" on an earlier answer: the same voice as for live answers */
   function say(text: string) {
     if (!support.speak || isBusy(machine.state) || listener) return;
-    speak(text, {
+    primeAudio();
+    const s = speakStream({
       onStart: () => machine.send('SPEAK_START'),
       onWord: length => wire.pluck(0.35 + length / 14),
       onEnd(reason) {
-        machine.send('SPEAK_END');
+        if (machine.state === 'speaking') machine.send('SPEAK_END');
         if (reason === 'no-voice') setNotice('В браузере нет русского голоса — ответ показан только текстом.');
         else if (reason === 'failed') setNotice('Не удалось озвучить ответ — он показан текстом.');
+        syncControls();
       },
     });
+    s.push(text);
+    s.end();
   }
 
   function startListening() {
+    primeAudio(); // a click: the only moment the browser lets the page open its audio output
     if (listener || isBusy(machine.state) || !support.listen) return;
     stopSpeaking();
     setNotice();

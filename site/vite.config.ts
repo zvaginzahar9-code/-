@@ -2,6 +2,7 @@ import { defineConfig, loadEnv, type Connect, type Plugin } from 'vite';
 import { readFileSync } from 'node:fs';
 import type { ServerResponse } from 'node:http';
 import { handle } from './server/handler.ts';
+import { handleTts } from './server/tts.ts';
 
 interface Item { slug: string; mark: string; kv: number; H: number | null; h: number | null; L: number | null; mass: number | null; project: string | null }
 
@@ -26,7 +27,7 @@ function catalogTable(): Plugin {
 }
 
 /**
- * Serves the assistant endpoint (api/chat.ts, a Vercel Function in production) from the
+ * Serves the assistant endpoints (/api/chat and /api/tts, Vercel Functions in production) from the
  * dev and preview servers. ASSISTANT_FAKE=1 swaps the model for a scripted double so the
  * interface can be exercised without an API key; that path does not exist in the deployed function.
  */
@@ -34,7 +35,8 @@ function assistantApi(mode: string): Plugin {
   const env = { ...loadEnv(mode, process.cwd(), ''), ...process.env };
   const fake = env.ASSISTANT_FAKE === '1' ? import('./tests/fake-model.ts').then(m => m.demoClient().client) : null;
   const middleware: Connect.NextHandleFunction = async (req, res: ServerResponse, next) => {
-    if (!req.url?.startsWith('/api/chat')) return next();
+    const tts = req.url?.startsWith('/api/tts');
+    if (!req.url?.startsWith('/api/chat') && !tts) return next();
     try {
       const chunks: Buffer[] = [];
       let size = 0;
@@ -53,7 +55,7 @@ function assistantApi(mode: string): Plugin {
       const body = req.method === 'GET' || req.method === 'HEAD' ? undefined : Buffer.concat(chunks);
       const request = new Request(`http://${req.headers.host}${req.url}`, { method: req.method, headers, body, signal: abort.signal });
       const client = await fake;
-      const response = await handle(request, client ? { env: { ...env, ASSISTANT_PROVIDER: 'anthropic', ANTHROPIC_API_KEY: 'fake' }, createClient: () => client, limit: () => ({ ok: true, retryAfter: 0 }) } : { env });
+      const response = tts ? await handleTts(request, { env }) : await handle(request, client ? { env: { ...env, ASSISTANT_PROVIDER: 'anthropic', ANTHROPIC_API_KEY: 'fake' }, createClient: () => client, limit: () => ({ ok: true, retryAfter: 0 }) } : { env });
       res.statusCode = response.status;
       response.headers.forEach((v, k) => res.setHeader(k, v));
       if (!response.body) return void res.end();

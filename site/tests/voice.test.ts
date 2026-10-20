@@ -86,6 +86,62 @@ describe('speaking an answer while it is written', () => {
     expect(events).toEqual(['end:finished']);
   });
 
+  it('neural voice: the first sentence is sent at once, the rest in one request at the end', async () => {
+    const played: number[] = [];
+    class Ctx {
+      state = 'running';
+      currentTime = 0;
+      destination = {};
+      createBuffer(_c: number, n: number) {
+        return { duration: n / 24000, getChannelData: () => new Float32Array(n) };
+      }
+      createBufferSource() {
+        return { buffer: null as unknown, connect() {}, start: (at: number) => played.push(at), stop() {}, onended: null };
+      }
+      resume() {}
+    }
+    const sent: string[] = [];
+    const g = globalThis as Record<string, unknown>;
+    g.AudioContext = Ctx;
+    g.fetch = async (_url: string, init: RequestInit) => {
+      sent.push(JSON.parse(String(init.body)).text);
+      return new Response(new Uint8Array([0, 16, 0, 16]));
+    };
+    voice.primeAudio();
+    const events: string[] = [];
+    const s = voice.speakStream({ onStart: () => events.push('start'), onWord: () => {}, onEnd: r => events.push(`end:${r}`) });
+    s.push('Нашёл опору П110-2. ');
+    expect(sent).toEqual(['Нашёл опору П110-2.']); // before the answer is complete
+    s.push('Высота 31 м. Масса 2726 кг.');
+    expect(sent).toHaveLength(1);
+    s.end();
+    expect(sent).toEqual(['Нашёл опору П110-2.', 'Высота 31 м. Масса 2726 кг.']);
+    await new Promise(r => setTimeout(r, 300));
+    expect(played).toHaveLength(2); // both phrases, in order
+    expect(events).toEqual(['start', 'end:finished']);
+  });
+
+  it('neural voice failing hands the answer to the browser voice', async () => {
+    engine.queue = [];
+    engine.spoken = [];
+    const g = globalThis as Record<string, unknown>;
+    g.fetch = async () => new Response('{}', { status: 503 });
+    const events: string[] = [];
+    const s = voice.speakStream({ onStart: () => events.push('start'), onWord: () => {}, onEnd: r => events.push(`end:${r}`) });
+    s.push('Телефон +7 777 684 60 70. ');
+    s.end();
+    await new Promise(r => setTimeout(r, 50));
+    expect(engine.queue.map(u => u.text)).toEqual(['Телефон +7 777 684 60 70.']);
+    engine.playOne();
+    expect(events).toEqual(['start', 'end:finished']);
+    // for a while after a failure the browser voice is used straight away
+    const next = voice.speakStream({ onStart: () => {}, onWord: () => {}, onEnd: () => {} });
+    next.push('Ещё. ');
+    await tick();
+    expect(engine.queue.map(u => u.text)).toEqual(['Ещё.']);
+    next.stop();
+  });
+
   it('text that arrives before the voice is ready is not lost', async () => {
     engine.queue = [];
     engine.spoken = [];

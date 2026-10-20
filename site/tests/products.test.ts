@@ -40,7 +40,7 @@ describe('product catalogue data', () => {
 
   it('every referenced drawing and its card preview are on disk', () => {
     for (const i of items.filter(i => i.draw)) {
-      expect(existsSync(join(pub, `${i.draw}.svg`)), i.draw!).toBe(true);
+      expect(existsSync(join(pub, `${i.draw}.${(i as { drawKind?: string }).drawKind === 'sheet' ? 'webp' : 'svg'}`)), i.draw!).toBe(true);
       expect(existsSync(join(pub, `${i.draw}-s.webp`)), i.draw!).toBe(true);
     }
   });

@@ -5,6 +5,9 @@
   "functions": {
     "api/chat.js": {
       "maxDuration": 60
+    },
+    "api/tts.js": {
+      "maxDuration": 30
     }
   },
   "headers": [
@@ -63,7 +66,7 @@
       ]
     },
     {
-      "source": "/(catalog|photo)/(.*)",
+      "source": "/(catalog|photo|products)/(.*)",
       "headers": [
         {
           "key": "Cache-Control",

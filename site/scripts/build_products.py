@@ -19,6 +19,7 @@ import sys
 
 import numpy as np
 from PIL import Image
+from scipy import ndimage
 
 RESEARCH, SITE = sys.argv[1], sys.argv[2]
 Z = os.path.join(RESEARCH, "zavsk")
@@ -131,16 +132,82 @@ TEXT_GROUPS = {
     ]
 }
 
-# photos and 3D renders, not line drawings (checked by eye on contact sheets): never redrawn
-NOT_DRAWINGS = {
+# photos and 3D renders, not line drawings (checked by eye on contact sheets): the product is
+# redrawn as a line picture from the image itself (scripts/lineart.py) and the site says so
+PICTURES = {
     "balki_metall_kon-626_900_0.jpg", "oporno-ankernye_plity_p-3.jpg", "opornye_plity_op-1.jpg",
-    "opornye_plity_op-2.jpg", "plita_opornaya_op-1d.png", "prozhektornye-machty-vmon-vmont-95_900_0.jpg",
+    "opornye_plity_op-2.jpg", "plita_opornaya_op-1d.png",
     "rostverki-ts-303_900_0.jpg", "screenshot_1-913_900_0.jpg", "screenshot_2_900_0.jpg",
     "usilennye_opornye_plity_uop-6.png",
     "machta-teleskopicheskaya-mtc.jpg", "machta-teleskopicheskaya-mtl.jpg", "machta-teleskopicheskaya-mtp.jpg",
     "machty-fermnye-st-3.png", "machty-fermnye-st-4.png", "machty-fermnye-tm.jpg", "opory-odn.jpg",
     "opory-radioreleynoy-svyazi-rrl.png",
 }
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from lineart import flat as _flat_rgb, lines as _lines  # noqa: E402
+
+
+# Sheets of the original typical series (files.stroyinf.ru scans) for marks the source shows no
+# scheme for: research/series/found_*.json maps slug -> sheet; each mapping was checked by reading
+# the sheet's title block. The scan is downscaled and redrawn like any scheme.
+SERIES = os.path.join(RESEARCH, "series")
+SHEETS = {}
+for fn in ("found_towers.json", "found_hardware.json", "found_multi.json"):
+    p = os.path.join(SERIES, fn)
+    if os.path.exists(p):
+        for e in json.load(open(p, encoding="utf-8")):
+            if not e.get("verified") or not e.get("file"):
+                continue
+            # the main sheet of a slug wins over extra sheets of the same family
+            if e["slug"] not in SHEETS or e.get("primary"):
+                SHEETS[e["slug"]] = e
+
+
+OUT_PRODUCTS = os.path.join(SITE, "public", "products")
+INK = (28, 34, 38)
+
+
+def sheet_image(e):
+    """The series scan, cleaned: uneven paper evened out to white, the lines in the site's ink,
+    on a transparent background. A whole scanned sheet does not vectorise well (the grey paper
+    becomes fills), so it is published as a clean raster: <stem>.webp, plus the card preview
+    <stem>-s.webp. Returns the stem name (with .png, for the bookkeeping of the other images)."""
+    src = os.path.join(SERIES, e["file"])
+    # some scans hold two sheets; the mapping says which half is this mark's ("левая половина"…)
+    t = e.get("sheet_title", "").lower()
+    half = next((h for w, h in (("левая половина", "l"), ("правая половина", "r"), ("верхняя половина", "t"), ("нижняя половина", "b")) if w in t), "")
+    stem = "sheet-" + re.sub(r"[^\w.-]", "_", os.path.splitext(os.path.basename(src))[0]) + (f"-{half}" if half else "")
+    big, small = os.path.join(OUT_PRODUCTS, stem + ".webp"), os.path.join(OUT_PRODUCTS, stem + "-s.webp")
+    if not (os.path.exists(big) and os.path.exists(small)):
+        im = Image.open(src).convert("L")
+        if half:
+            w, h = im.size
+            box = {"l": (0, 0, w // 2 + w // 50, h), "r": (w // 2 - w // 50, 0, w, h), "t": (0, 0, w, h // 2 + h // 50), "b": (0, h // 2 - h // 50, w, h)}[half]
+            im = im.crop(box)
+        im.thumbnail((2000, 2000), Image.LANCZOS)
+        lum = np.asarray(im, dtype=np.float32)
+        paper = ndimage.maximum_filter(ndimage.gaussian_filter(lum, 3), size=41)  # local paper tone
+        ratio = lum / np.maximum(paper, 1)
+        alpha = np.clip((0.88 - ratio) / 0.3, 0, 1)
+        rgba = np.zeros(lum.shape + (4,), np.uint8)
+        rgba[..., :3] = INK
+        rgba[..., 3] = (alpha * 255).astype(np.uint8)
+        os.makedirs(OUT_PRODUCTS, exist_ok=True)
+        Image.fromarray(rgba).save(big, "WEBP", quality=80, method=6)
+        # card preview on white (the cards blend it with `multiply`)
+        prev = Image.alpha_composite(Image.new("RGBA", im.size, (255, 255, 255, 255)), Image.fromarray(rgba))
+        prev.thumbnail((480, 480), Image.LANCZOS)
+        prev.convert("RGB").save(small, "WEBP", quality=82, method=6)
+    return stem + ".png"
+
+
+def picture(img):
+    """A photo/render becomes a black-and-white line picture next to it (made once)."""
+    name = os.path.splitext(img)[0] + "-lines.png"
+    dst = os.path.join(Z, "img", name)
+    if not os.path.exists(dst):
+        Image.fromarray(_lines(_flat_rgb(os.path.join(Z, "img", img)))).save(dst)
+    return name
 # collages "photo + drawing": only the drawing half is redrawn (box in source pixels)
 CROPS = {
     "vgm_900_0.jpg": (470, 0, 900, 1167),
@@ -282,9 +349,12 @@ MARKS = {  # titles without a mark of the usual shape; the marks are taken from 
 def mark_of(title):
     if title in MARKS:
         return MARKS[title]
+    title = re.sub(r"\s*\([^)]*\)\s*$", "", title)  # "Оголовок ОГs - 54 (ENSTO 4-1)" -> "Оголовок ОГs - 54"
+    title = re.sub(r"\s+-\s+", "-", title)  # "ОГs - 54" -> "ОГs-54"
+    title = re.sub(r"\s+железобетонная$", "", title)  # "…опора УА10-1 железобетонная"
     # "Траверса ТМ-1" -> "ТМ-1"; "Консольные опоры М1-12-80С" -> "М1-12-80С"
     # an optional leading digit belongs to the mark: "1П110-1", "2П330-5"
-    m = re.search(r"(\d?[A-ZА-ЯЁ][A-Za-zА-ЯЁа-яё]{0,4}s?[-\s]?\d[\w.,/()-]*(?:\s*[,/]\s*[A-ZА-ЯЁ][\w.,/()-]*\d[\w.,/()-]*)*)\s*$", title)
+    m = re.search(r"(\d?[A-ZА-ЯЁ][A-Za-zА-ЯЁа-яё]{0,4}s?[-\s]?\d[\w.,/()+-]*(?:\s*[,/]\s*[A-ZА-ЯЁ][\w.,/()+-]*\d[\w.,/()+-]*)*)\s*$", title)
     if m:
         s = re.sub(r"(?<=[A-Za-zА-ЯЁа-яё])\s+(?=\d)", "-", m.group(1))  # "ПМС 24,0" -> "ПМС-24,0"
         s = s.replace(" ", "")
@@ -346,7 +416,11 @@ for cid, ctitle, groups in CATEGORIES:
         items = []
         if src.startswith("text:"):
             for it in TEXT_GROUPS[src]:
-                items.append({"slug": f"{cid}-{it['slug']}", "name": it["name"], "mark": mark_of(it["name"]), "draw": None, "note": it["note"], "tables": [], "keys": {}})
+                slug = f"{cid}-{it['slug']}"
+                entry = {"slug": slug, "name": it["name"], "mark": mark_of(it["name"]), "draw": None, "drawKind": None, "note": it["note"], "tables": [], "keys": {}}
+                if slug in SHEETS:
+                    entry.update(draw=os.path.splitext(sheet_image(SHEETS[slug]))[0], drawKind="sheet", sheet={"series": SHEETS[slug]["series"], "title": SHEETS[slug].get("sheet_title", ""), "url": SHEETS[slug].get("page_url", "")})
+                items.append(entry)
         else:
             paths = sorted(p for p in P if p.startswith(src) and p.count("/") == src.count("/") + 1 and (flt is None or flt(p)))
             if cid == SKIP_LINEUP:
@@ -362,8 +436,10 @@ for cid, ctitle, groups in CATEGORIES:
                 note = sentences(text(re.sub(r"<table.*?</table>", " ", frag, flags=re.S)))
                 img = next((os.path.basename(i) for i in pr["images"] if "coming-soon" not in i), None)
                 draw = None
-                if img and img not in NOT_DRAWINGS and os.path.exists(os.path.join(Z, "img", img)):
-                    img = canonical(cropped(img))
+                kind = None
+                if img and os.path.exists(os.path.join(Z, "img", img)):
+                    kind = "picture" if img in PICTURES else "scheme"
+                    img = canonical(picture(img) if kind == "picture" else cropped(img))
                     used_images[img] = True
                     draw = os.path.splitext(img)[0]
                 slug = re.sub(r"[^a-z0-9-]", "", path.rstrip("/").rsplit("/", 1)[1].lower())
@@ -371,15 +447,30 @@ for cid, ctitle, groups in CATEGORIES:
                 while slug in seen_slugs:
                     slug += "-2"
                 seen_slugs.add(slug)
+                sheet = None
+                if draw is None and slug in SHEETS:
+                    sheet = SHEETS[slug]
+                    draw, kind = os.path.splitext(sheet_image(sheet))[0], "sheet"  # published as is, not traced
                 items.append({
                     "slug": slug,
                     "name": pr["title"],
                     "mark": mark_of(pr["title"]),
                     "draw": draw,
+                    # "scheme": a redrawn drawing; "picture": redrawn from a photo/3D model of the product
+                    "drawKind": kind,
+                    **({"sheet": {"series": sheet["series"], "title": sheet.get("sheet_title", ""), "url": sheet.get("page_url", "")}} if sheet else {}),
                     "note": note,
                     "tables": tabs,
                     "keys": keys_of(tabs, note),
                 })
+        # "<mark>+N" is the same pole on an N-metre stand: it is shown with the base pole's sheet
+        # (and the site says so); any other difference in the mark is a different pole — not borrowed
+        drawn = {re.sub(r"^Многогранные опоры\s*", "", it["mark"]): it for it in items if it["draw"]}
+        for it in items:
+            m = re.match(r"^(.+?)\s*\+\s*\d+(?:[.,]\d+)?$", re.sub(r"^Многогранные опоры\s*", "", it["mark"]))
+            if not it["draw"] and m and m.group(1) in drawn:
+                base = drawn[m.group(1)]
+                it.update(draw=base["draw"], drawKind=base.get("drawKind"), base=m.group(1), **({"sheet": base["sheet"]} if base.get("sheet") else {}))
         # a drawing shared by several marks of the group is a series scheme
         counts = {}
         for it in items:

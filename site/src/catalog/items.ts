@@ -18,6 +18,12 @@ export interface Item {
   draw: string | null;
   /** the drawing is the scheme of the whole series (shared by several marks) */
   series: boolean;
+  /** "scheme": a drawing redrawn 1:1; "picture": the product redrawn from its photo/3D model */
+  drawKind?: 'scheme' | 'picture' | 'sheet' | null;
+  /** "<base>+N" marks: the sheet is the base pole's (the same pole on a stand) */
+  base?: string;
+  /** for drawKind "sheet": the typical series album the sheet comes from */
+  sheet?: { series: string; title: string; url: string };
   note: string;
   tables: Cell[][][];
   /** stated by the source unambiguously; doc = drawing, album or series number */
@@ -35,7 +41,8 @@ const PAGE = 48;
 const state = { cat: categories[0].id, group: '', q: '', limit: PAGE };
 let list: Entry[] = [];
 
-const drawSrc = (it: Item) => `products/${it.draw}.svg`;
+// typical-series sheets are cleaned scans (raster); everything else is a vector redraw
+const drawSrc = (it: Item) => `products/${it.draw}.${it.drawKind === 'sheet' ? 'webp' : 'svg'}`;
 /** light raster preview of the same drawing for the cards (scripts/thumbs.cjs) */
 const thumbSrc = (it: Item) => `products/${it.draw}-s.webp`;
 const num = (n: number) => n.toLocaleString('ru-RU', { maximumFractionDigits: 2 });
@@ -204,6 +211,9 @@ function stackHtml(rows: Cell[][]): string | null {
   return `<div class="pstack">${blocks.join('')}</div>`;
 }
 
+/** "Накладка ОГ6 (3.407.1-143.8.29) — левая половина…" → "Накладка ОГ6": the sheet's own name */
+const sheetName = (title: string) => title.split(/\s[—(]|\s-\s/)[0].trim().slice(0, 80);
+
 function fill(e: Entry) {
   const it = e.item;
   const s = el();
@@ -241,7 +251,17 @@ function fill(e: Entry) {
   none.hidden = !!it.draw;
   const cap = $('[data-isheet-cap]', s)!;
   // one scheme is shown for the whole series: say so, so its figures are not read as this mark's
-  cap.textContent = it.draw && it.series ? 'Схема серии: на ней одна из марок. Размеры этой марки — в таблице или по запросу' : '';
+  cap.textContent = !it.draw
+    ? ''
+    : it.base
+      ? `Лист опоры ${it.base}: эта марка — та же опора на подставке`
+    : it.drawKind === 'sheet' && it.sheet
+      ? `Лист типовой серии ${it.sheet.series}${sheetName(it.sheet.title) ? ` — ${sheetName(it.sheet.title)}` : ''}`
+      : it.drawKind === 'picture'
+      ? 'Изображение изделия, перерисованное с его фотографии или 3D-модели; это не чертёж'
+      : it.series
+        ? 'Схема серии: на ней одна из марок. Размеры этой марки — в таблице или по запросу'
+        : '';
   $('[data-isheet-pos]', s)!.textContent = `${order.indexOf(e) + 1} / ${order.length}`;
 }
 

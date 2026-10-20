@@ -1,9 +1,10 @@
 import { toPlain } from './markdown';
 
 /**
- * Voice services built on what the browser itself provides (Web Speech API): speech
- * recognition and speech synthesis. No audio passes through this site's server. Both
- * are optional — feature-detected, and every failure is reported, never papered over.
+ * Voice services. Recognition is the browser's own (Web Speech API); the visitor's audio never
+ * reaches this site's server. Answers are read by a neural voice (Gemini TTS through /api/tts,
+ * the text only — see server/tts.ts), and by the browser's own speech synthesis when the neural
+ * voice is unavailable. Everything is feature-detected, and every failure is reported.
  */
 
 interface RecognitionResult {
@@ -35,9 +36,14 @@ const recognitionCtor = (): RecognitionCtor | null => {
   return w.SpeechRecognition ?? w.webkitSpeechRecognition ?? null;
 };
 
+const audioCtor = (): typeof AudioContext | null =>
+  (window as unknown as { AudioContext?: typeof AudioContext; webkitAudioContext?: typeof AudioContext }).AudioContext ??
+  (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext ??
+  null;
+
 export const voiceSupport = () => ({
   listen: recognitionCtor() !== null,
-  speak: 'speechSynthesis' in window && 'SpeechSynthesisUtterance' in window,
+  speak: ('speechSynthesis' in window && 'SpeechSynthesisUtterance' in window) || audioCtor() !== null,
 });
 
 export type ListenError = 'denied' | 'no-mic' | 'no-speech' | 'network' | 'unsupported' | 'failed';
@@ -322,7 +328,7 @@ export interface SpeechStream {
  * speech engine at once, so the voice starts with the first sentence instead of after the whole
  * answer. `onEnd` fires only after `end()` and the last queued sentence.
  */
-export function speakStream(h: SpeakHandlers): SpeechStream {
+function browserStream(h: SpeakHandlers): SpeechStream {
   speaking?.stop();
   let over = false;
   let ended = false;
@@ -438,4 +444,261 @@ export function speakStream(h: SpeakHandlers): SpeechStream {
     else if (voice && Date.now() - endedAt > 3000) finish(inFlight ? 'failed' : 'finished');
   }, 700);
   return stream;
+}
+
+/* ───────────── neural voice (Gemini TTS through /api/tts) ───────────── */
+
+const SAMPLE_RATE = 24_000;
+let audio: AudioContext | null = null;
+/** the neural voice failed (no key, quota, outage): use the browser voice until then */
+let neuralDownUntil = 0;
+
+/** Creates/resumes the audio output. Browsers allow it only inside a user gesture: call it on a click. */
+export function primeAudio() {
+  const Ctor = audioCtor();
+  if (!Ctor) return;
+  try {
+    if (!audio) {
+      try {
+        audio = new Ctor({ sampleRate: SAMPLE_RATE });
+      } catch {
+        audio = new Ctor(); // buffers at 24 kHz are resampled by the browser
+      }
+    }
+    if (audio.state === 'suspended') void audio.resume();
+  } catch {
+    audio = null;
+  }
+}
+
+/**
+ * Reads an answer with the neural voice while it is still being written. The first finished
+ * sentence is sent for synthesis at once (so the voice starts with the text); the rest is sent
+ * as one more request when the answer is complete — two requests per answer keep within the
+ * free tier. The audio is played as it streams in. Any failure hands the rest of the answer,
+ * including the part that failed, to the browser voice.
+ */
+function neuralStream(h: SpeakHandlers): SpeechStream {
+  speaking?.stop();
+  const ctx = audio!;
+  let over = false;
+  let ended = false;
+  let started = false;
+  let generation = 0;
+  let buffer = ''; // text not yet sent
+  let sentFirst = false;
+  let chain: Promise<void> = Promise.resolve(); // requests are played strictly in order
+  let pendingRequests = 0;
+  let playUntil = 0; // when the last scheduled sound ends (audio clock)
+  const sources = new Set<AudioBufferSourceNode>();
+  const timers = new Set<number>();
+  const fetches = new Set<AbortController>();
+  let fallback: SpeechStream | null = null;
+  let endTimer = 0;
+
+  const later = (ms: number, fn: () => void) => {
+    const id = window.setTimeout(() => {
+      timers.delete(id);
+      fn();
+    }, Math.max(0, ms));
+    timers.add(id);
+  };
+  const silence = () => {
+    fetches.forEach(a => a.abort());
+    fetches.clear();
+    sources.forEach(s => {
+      try {
+        s.stop();
+      } catch {
+        /* not started */
+      }
+    });
+    sources.clear();
+    timers.forEach(id => clearTimeout(id));
+    timers.clear();
+    clearTimeout(endTimer);
+  };
+  const finish = (reason: Parameters<SpeakHandlers['onEnd']>[0]) => {
+    if (over) return;
+    over = true;
+    silence();
+    if (speaking === stream) speaking = null;
+    h.onEnd(reason);
+  };
+  const checkEnd = () => {
+    if (over || fallback || !ended || pendingRequests || buffer.trim()) return;
+    clearTimeout(endTimer);
+    endTimer = window.setTimeout(() => finish('finished'), Math.max(0, (playUntil - ctx.currentTime) * 1000) + 120);
+  };
+
+  // the rest of the answer goes to the browser voice; its end is this stream's end
+  const handOver = (text: string) => {
+    if (over || fallback) return;
+    silence();
+    if (!('speechSynthesis' in window)) return finish('failed');
+    speaking = null; // the browser voice must not stop this stream when it starts
+    fallback = browserStream({
+      onStart: () => {
+        if (!started) {
+          started = true;
+          h.onStart();
+        }
+      },
+      onWord: h.onWord,
+      onEnd: reason => {
+        if (speaking === fallback) speaking = stream;
+        finish(reason);
+      },
+    });
+    speaking = stream;
+    fallback.push(text + buffer);
+    buffer = '';
+    if (ended) fallback.end();
+  };
+
+  const play = (pcm: Int16Array, gen: number) => {
+    if (over || gen !== generation || !pcm.length) return;
+    const buf = ctx.createBuffer(1, pcm.length, SAMPLE_RATE);
+    const ch = buf.getChannelData(0);
+    let sum = 0;
+    for (let i = 0; i < pcm.length; i++) {
+      ch[i] = pcm[i] / 32768;
+      sum += ch[i] * ch[i];
+    }
+    const src = ctx.createBufferSource();
+    src.buffer = buf;
+    src.connect(ctx.destination);
+    const at = Math.max(ctx.currentTime + 0.03, playUntil);
+    src.start(at);
+    sources.add(src);
+    src.onended = () => sources.delete(src);
+    playUntil = at + buf.duration;
+    const delay = (at - ctx.currentTime) * 1000;
+    if (!started) {
+      started = true;
+      later(delay, () => !over && h.onStart());
+    }
+    // the wire moves with the loudness of what is being said
+    const rms = Math.sqrt(sum / pcm.length);
+    later(delay, () => !over && gen === generation && h.onWord(Math.min(14, 3 + rms * 60)));
+  };
+
+  const request = (text: string) => {
+    const gen = generation;
+    const part = toPlain(text).trim();
+    if (!part) return;
+    pendingRequests++;
+    const ctrl = new AbortController();
+    fetches.add(ctrl);
+    // fetch at once, play after everything sent earlier
+    const response = fetch('/api/tts', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ text: part }), signal: ctrl.signal });
+    const previous = chain;
+    chain = (async () => {
+      let ok = false;
+      try {
+        const res = await response;
+        await previous;
+        if (over || gen !== generation) return void (ok = true);
+        if (!res.ok || !res.body) throw new Error(String(res.status));
+        const reader = res.body.getReader();
+        let odd: number | null = null;
+        let any = false;
+        while (true) {
+          const { value, done } = await reader.read();
+          if (done || over || gen !== generation) break;
+          let bytes = value;
+          if (odd !== null) {
+            const joined = new Uint8Array(bytes.length + 1);
+            joined[0] = odd;
+            joined.set(bytes, 1);
+            bytes = joined;
+            odd = null;
+          }
+          if (bytes.length % 2) {
+            odd = bytes[bytes.length - 1];
+            bytes = bytes.subarray(0, bytes.length - 1);
+          }
+          const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+          const pcm = new Int16Array(bytes.byteLength / 2);
+          for (let i = 0; i < pcm.length; i++) pcm[i] = view.getInt16(i * 2, true);
+          if (pcm.length) any = true;
+          play(pcm, gen);
+        }
+        ok = any || over || gen !== generation;
+      } catch {
+        ok = over || gen !== generation; // an abort by reset/stop is not a failure
+      } finally {
+        fetches.delete(ctrl);
+        pendingRequests--;
+      }
+      if (!ok) {
+        neuralDownUntil = Date.now() + 10 * 60_000;
+        handOver(part);
+        return;
+      }
+      checkEnd();
+    })();
+  };
+
+  const sendReady = (all: boolean) => {
+    if (over || fallback) return;
+    if (!sentFirst) {
+      // the first finished sentence goes at once, so the voice starts with the text
+      const m = buffer.match(/^[\s\S]*?[.!?…:;](?=\s)|^[\s\S]*?\n/);
+      if (m && m[0].trim().length > 1) {
+        sentFirst = true;
+        request(m[0]);
+        buffer = buffer.slice(m[0].length);
+      }
+    }
+    if (all && buffer.trim()) {
+      request(buffer);
+      buffer = '';
+    }
+  };
+
+  const stream: SpeechStream = {
+    push(text) {
+      if (over) return;
+      if (fallback) return fallback.push(text);
+      buffer += text;
+      sendReady(false);
+    },
+    reset() {
+      if (over) return;
+      if (fallback) return fallback.reset();
+      generation++;
+      silence();
+      pendingRequests = 0;
+      chain = Promise.resolve();
+      buffer = '';
+      sentFirst = false;
+      playUntil = 0;
+    },
+    end() {
+      if (over || ended) return;
+      ended = true;
+      if (fallback) return fallback.end();
+      sendReady(true);
+      checkEnd();
+    },
+    stop() {
+      if (fallback) fallback.stop();
+      finish('stopped');
+    },
+    get active() {
+      return !over;
+    },
+  };
+  speaking = stream;
+  return stream;
+}
+
+/**
+ * Speaks an answer while it is being written: the neural voice when it can be used (an audio
+ * output was opened by a click and the voice has not failed recently), else the browser voice.
+ */
+export function speakStream(h: SpeakHandlers): SpeechStream {
+  if (audio && audio.state !== 'closed' && Date.now() > neuralDownUntil && typeof fetch === 'function') return neuralStream(h);
+  return browserStream(h);
 }

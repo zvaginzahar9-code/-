@@ -142,13 +142,49 @@ const perMinute = createRateLimiter(30, 6e4);
 const perHour = createRateLimiter(240, 36e5);
 const SAMPLE_RATE = 24e3;
 const runtimeEnv = () => globalThis.process?.env ?? {};
-/** The voice and its manner: a lively, warm consultant rather than a reader of letters. */
+/**
+* The voice and its manner: a lively, warm consultant rather than a reader of letters.
+* Each TTS model has its own free-tier quota, so when one answers 429 the next is tried
+* (GEMINI_TTS_MODEL may list several, comma-separated).
+*/
 function ttsSettings(env) {
+	const models = (env.GEMINI_TTS_MODEL?.trim() || "gemini-3.8-flash-lite-tts,gemini-3.8-flash-tts,gemini-3.1-flash-tts-preview").split(",").map((s) => s.trim()).filter(Boolean);
 	return {
-		model: env.GEMINI_TTS_MODEL?.trim() || "gemini-3.8-flash-lite-tts",
+		model: models[0],
+		models,
 		voice: env.GEMINI_TTS_VOICE?.trim() || "Puck",
 		style: env.GEMINI_TTS_STYLE?.trim() || "warm, lively and friendly, like an engaged consultant talking to a client; natural conversational pace with expressive intonation"
 	};
+}
+/**
+* Text as it should be heard: abbreviations a speech model mispronounces or spells out with a
+* foreign accent are written the way a Russian speaker says them; list dashes and quotes go.
+*/
+function speakable(text) {
+	const word = (w, unitAfterDigit = false) => new RegExp(`${unitAfterDigit ? "(?<=\\d\\s?)" : "(?<![\\p{L}\\d])"}${w}(?![\\p{L}\\d])`, "gu");
+	const words = [
+		[word("кВ", true), " киловольт"],
+		[word("кВ"), "киловольт"],
+		[word("МВт", true), " мегаватт"],
+		[word("ШГЭС"), "Шульбинская гэс"],
+		[word("ВЛ"), "вэ-эл"],
+		[word("ТОО"), "тэ-о-о"],
+		[word("ООО"), "о-о-о"],
+		[word("ОРУ"), "о-эр-у"],
+		[word("ПС"), "подстанция"],
+		[word("КМД"), "кэ-эм-дэ"],
+		[word("КЗГЦ"), "кэ-зэ-гэ-цэ"],
+		[word("ЭК"), "э-ка"],
+		[word("ЭМК"), "э-эм-ка"],
+		[word("ГЭС"), "гэс"],
+		[word("ВЭС"), "вэс"],
+		[word("ВКО"), "Восточно-Казахстанская область"],
+		[word("РК"), "Республики Казахстан"],
+		[word("БИН"), "бин"]
+	];
+	let t = text.replace(/[«»"“”]/g, "").replace(/^\s*[-•*]\s+/gm, "").replace(/\s+[—–]\s+/g, ", ");
+	for (const [re, to] of words) t = t.replace(re, to);
+	return t.replace(/\s+/g, " ").replace(/\s+([,.])/g, "$1").trim();
 }
 function base64ToBytes(b64) {
 	const bin = atob(b64);
@@ -183,46 +219,57 @@ async function handleTts(request, deps = {}) {
 	}
 	if (!text || text.length > MAX_CHARS) return errorResponse("bad_request");
 	if (!apiKey) return errorResponse("not_configured");
-	const { model, voice, style } = ttsSettings(env);
+	const { models, voice, style } = ttsSettings(env);
+	const spoken = speakable(text);
 	const doFetch = deps.fetch ?? fetch;
 	const upstream = new AbortController();
 	request.signal?.addEventListener("abort", () => upstream.abort(), { once: true });
 	const timer = setTimeout(() => upstream.abort(), 3e4);
 	let res;
-	try {
-		res = await doFetch(`${config.gemini.baseUrl.replace(/\/+$/, "")}/v1beta/interactions?alt=sse`, {
-			method: "POST",
-			headers: {
-				"Content-Type": "application/json",
-				"x-goog-api-key": apiKey
-			},
-			body: JSON.stringify({
-				model,
-				input: [{
-					type: "user_input",
-					content: [{
-						type: "text",
-						text,
-						annotations: [{
-							type: "speech_metadata",
-							style
-						}]
-					}]
-				}],
-				response_format: {
-					type: "audio",
-					mime_type: "audio/l16",
-					sample_rate: SAMPLE_RATE
+	let model = models[0];
+	for (model of models) {
+		try {
+			res = await doFetch(`${config.gemini.baseUrl.replace(/\/+$/, "")}/v1beta/interactions?alt=sse`, {
+				method: "POST",
+				headers: {
+					"Content-Type": "application/json",
+					"x-goog-api-key": apiKey
 				},
-				generation_config: { speech_config: [{ voice }] },
-				stream: true
-			}),
-			signal: upstream.signal,
-			redirect: "error"
-		});
-	} catch {
-		clearTimeout(timer);
-		return errorResponse("unavailable");
+				body: JSON.stringify({
+					model,
+					input: [{
+						type: "user_input",
+						content: [{
+							type: "text",
+							text: spoken,
+							annotations: [{
+								type: "speech_metadata",
+								style
+							}]
+						}]
+					}],
+					response_format: {
+						type: "audio",
+						mime_type: "audio/l16",
+						sample_rate: SAMPLE_RATE
+					},
+					generation_config: { speech_config: [{ voice }] },
+					stream: true
+				}),
+				signal: upstream.signal,
+				redirect: "error"
+			});
+		} catch {
+			clearTimeout(timer);
+			return errorResponse("unavailable");
+		}
+		if (res.status !== 429 && res.status !== 404) break;
+		console.error(JSON.stringify({
+			evt: "tts_fallback",
+			status: res.status,
+			model
+		}));
+		await res.body?.cancel().catch(() => {});
 	}
 	if (!res.ok || !res.body) {
 		clearTimeout(timer);

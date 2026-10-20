@@ -86,7 +86,7 @@ describe('speaking an answer while it is written', () => {
     expect(events).toEqual(['end:finished']);
   });
 
-  it('neural voice: the first sentence is sent at once, the rest in one request at the end', async () => {
+  it('neural voice: the whole answer in one request once it is complete (free-tier friendly)', async () => {
     const played: number[] = [];
     class Ctx {
       state = 'running';
@@ -111,13 +111,12 @@ describe('speaking an answer while it is written', () => {
     const events: string[] = [];
     const s = voice.speakStream({ onStart: () => events.push('start'), onWord: () => {}, onEnd: r => events.push(`end:${r}`) });
     s.push('Нашёл опору П110-2. ');
-    expect(sent).toEqual(['Нашёл опору П110-2.']); // before the answer is complete
     s.push('Высота 31 м. Масса 2726 кг.');
-    expect(sent).toHaveLength(1);
+    expect(sent).toHaveLength(0); // nothing is spent before the answer is complete
     s.end();
-    expect(sent).toEqual(['Нашёл опору П110-2.', 'Высота 31 м. Масса 2726 кг.']);
+    expect(sent).toEqual(['Нашёл опору П110-2. Высота 31 м. Масса 2726 кг.']);
     await new Promise(r => setTimeout(r, 300));
-    expect(played).toHaveLength(2); // both phrases, in order
+    expect(played).toHaveLength(1);
     expect(events).toEqual(['start', 'end:finished']);
   });
 
@@ -140,6 +139,53 @@ describe('speaking an answer while it is written', () => {
     await tick();
     expect(engine.queue.map(u => u.text)).toEqual(['Ещё.']);
     next.stop();
+  });
+
+  it('microphone: a cold "no speech" is restarted quietly instead of "I did not hear you"', async () => {
+    const made: any[] = [];
+    class Rec {
+      lang = ''; continuous = false; interimResults = false; maxAlternatives = 1;
+      onaudiostart: any; onspeechend: any; onresult: any; onerror: any; onend: any;
+      constructor() { made.push(this); }
+      start() {}
+      stop() { this.onend?.(); }
+      abort() { this.onend?.(); }
+    }
+    (globalThis as any).SpeechRecognition = Rec;
+    const results: unknown[] = [];
+    let starts = 0;
+    voice.listen({ onStart: () => starts++, onInterim: () => {}, onSpeechEnd: () => {}, onEnd: r => results.push(r) });
+    await tick();
+    expect(made).toHaveLength(1);
+    // the service wakes up, hears nothing yet and gives up
+    made[0].onaudiostart();
+    made[0].onerror({ error: 'no-speech' });
+    made[0].onend();
+    expect(results).toEqual([]); // not reported to the visitor
+    expect(made).toHaveLength(2); // listening again
+    made[1].onaudiostart();
+    expect(starts).toBe(1); // "listening" was shown once
+    made[1].onresult({ resultIndex: 0, results: [{ isFinal: true, 0: { transcript: 'покажи П110-2' } }] });
+    made[1].onend();
+    expect(results).toEqual([{ text: 'покажи П110-2' }]);
+  });
+
+  it('microphone: when the visitor presses "done" there is no restart', async () => {
+    const made: any[] = [];
+    (globalThis as any).SpeechRecognition = class {
+      onaudiostart: any; onresult: any; onerror: any; onend: any; onspeechend: any;
+      constructor() { made.push(this); }
+      start() {}
+      stop() { this.onend?.(); }
+      abort() { this.onend?.(); }
+    };
+    const results: unknown[] = [];
+    const l = voice.listen({ onStart: () => {}, onInterim: () => {}, onSpeechEnd: () => {}, onEnd: r => results.push(r) });
+    await tick();
+    made[0].onaudiostart();
+    l.stop();
+    expect(made).toHaveLength(1);
+    expect(results).toEqual([{ error: 'no-speech' }]);
   });
 
   it('text that arrives before the voice is ready is not lost', async () => {

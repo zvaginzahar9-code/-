@@ -105,6 +105,7 @@ export function listen(h: ListenHandlers): Listener {
   let finalText = '';
   let error: ListenError | null = null;
   let cancelled = false;
+  let stopped = false;
   let ended = false;
   let silence = 0;
   // a recognition service that never answers must not leave the microphone open
@@ -145,7 +146,9 @@ export function listen(h: ListenHandlers): Listener {
     // anything unexpected below ends the session cleanly instead of leaving the microphone open
     if (canAnalyse()) {
       try {
-        stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        // no processing on this second capture: its automatic gain control can turn the shared
+        // microphone down for recognition too, which made the first attempts "deaf"
+        stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false } });
         if (cancelled) return release();
         audio = new AudioContext();
         analyser = audio.createAnalyser();
@@ -161,36 +164,62 @@ export function listen(h: ListenHandlers): Listener {
       }
     }
     if (cancelled) return release();
+    const opened = Date.now();
+    let announced = false;
+    let heard = false;
+    // The recognition service often wakes up slowly: the first session may end with "no speech"
+    // before the visitor has said a word. Within the listening window such a session is quietly
+    // started again instead of answering "I did not hear you".
+    const startRec = () => {
+      const r = new Ctor();
+      rec = r;
+      r.lang = 'ru-RU';
+      r.continuous = false;
+      r.interimResults = true;
+      r.maxAlternatives = 1;
+      r.onaudiostart = () => {
+        if (announced) return;
+        announced = true;
+        armSilence();
+        h.onStart(analyser);
+      };
+      r.onspeechend = () => {
+        if (heard) h.onSpeechEnd();
+      };
+      r.onresult = e => {
+        armSilence();
+        heard = true;
+        let interim = '';
+        for (let i = e.resultIndex; i < e.results.length; i++) {
+          const x = e.results[i];
+          if (x.isFinal) finalText += x[0].transcript;
+          else interim += x[0].transcript;
+        }
+        h.onInterim((finalText + interim).trim());
+      };
+      r.onerror = e => {
+        error = mapError(e.error) ?? error;
+      };
+      r.onend = () => {
+        if (rec !== r) return;
+        if (cancelled) return end({ text: '' });
+        const text = finalText.trim();
+        if (text) return end({ text });
+        const quiet = error === null || error === 'no-speech';
+        if (quiet && !stopped && Date.now() - opened < SILENCE_MS - 1500) {
+          error = null;
+          try {
+            return startRec();
+          } catch {
+            /* fall through to the result below */
+          }
+        }
+        end(error ? { error } : { error: 'no-speech' });
+      };
+      r.start();
+    };
     try {
-    rec = new Ctor();
-    rec.lang = 'ru-RU';
-    rec.continuous = false;
-    rec.interimResults = true;
-    rec.maxAlternatives = 1;
-    rec.onaudiostart = () => {
-      armSilence();
-      h.onStart(analyser);
-    };
-    rec.onspeechend = () => h.onSpeechEnd();
-    rec.onresult = e => {
-      armSilence();
-      let interim = '';
-      for (let i = e.resultIndex; i < e.results.length; i++) {
-        const r = e.results[i];
-        if (r.isFinal) finalText += r[0].transcript;
-        else interim += r[0].transcript;
-      }
-      h.onInterim((finalText + interim).trim());
-    };
-    rec.onerror = e => {
-      error = mapError(e.error) ?? error;
-    };
-    rec.onend = () => {
-      if (cancelled) return end({ text: '' });
-      const text = finalText.trim();
-      end(text ? { text } : error ? { error } : { error: 'no-speech' });
-    };
-    rec.start();
+      startRec();
     } catch {
       end({ error: 'failed' });
     }
@@ -198,6 +227,7 @@ export function listen(h: ListenHandlers): Listener {
 
   return {
     stop() {
+      stopped = true; // the visitor is done: no quiet restart after this
       try {
         rec?.stop();
       } catch {
@@ -226,8 +256,12 @@ function russianVoice(): Promise<SpeechSynthesisVoice | null> {
     const voices = speechSynthesis.getVoices().filter(v => v.lang.toLowerCase().startsWith('ru'));
     // the assistant speaks with a male voice when the system has one (browsers do not report
     // gender, so this goes by the names the common platforms give their Russian male voices)
-    const male = voices.find(v => /pavel|павел|dmitr|дмитр|yuri|юри|maxim|максим|aleks|алекс|ivan|иван|artem|артём|male|муж/i.test(v.name) && !/female|жен/i.test(v.name));
-    return male ?? voices.find(v => v.localService) ?? voices[0] ?? null;
+    const isMale = (v: SpeechSynthesisVoice) => /pavel|павел|dmitr|дмитр|yuri|юри|maxim|максим|aleks|алекс|ivan|иван|artem|артём|male|муж/i.test(v.name) && !/female|жен/i.test(v.name);
+    // neural voices sound far more natural than the old system ones: Edge "… Online (Natural)",
+    // then Chrome's "Google русский", then the system voices
+    const natural = voices.filter(v => /natural|online|neural/i.test(v.name));
+    const google = voices.filter(v => /google/i.test(v.name));
+    return natural.find(isMale) ?? natural[0] ?? google[0] ?? voices.find(isMale) ?? voices.find(v => v.localService) ?? voices[0] ?? null;
   };
   const now = pick();
   if (now || speechSynthesis.getVoices().length) return Promise.resolve(now);
@@ -472,11 +506,9 @@ export function primeAudio() {
 }
 
 /**
- * Reads an answer with the neural voice while it is still being written. The first finished
- * sentence is sent for synthesis at once (so the voice starts with the text); the rest is sent
- * as one more request when the answer is complete — two requests per answer keep within the
- * free tier. The audio is played as it streams in. Any failure hands the rest of the answer,
- * including the part that failed, to the browser voice.
+ * Reads an answer with the neural voice. The whole answer goes in one request as soon as it is
+ * complete (the text streams in about a second, the free tier allows few requests a minute);
+ * the audio is played as it streams back. Any failure hands the answer to the browser voice.
  */
 function neuralStream(h: SpeakHandlers): SpeechStream {
   speaking?.stop();
@@ -595,6 +627,7 @@ function neuralStream(h: SpeakHandlers): SpeechStream {
     const previous = chain;
     chain = (async () => {
       let ok = false;
+      let status = 0;
       try {
         const res = await response;
         await previous;
@@ -625,14 +658,16 @@ function neuralStream(h: SpeakHandlers): SpeechStream {
           play(pcm, gen);
         }
         ok = any || over || gen !== generation;
-      } catch {
+      } catch (e) {
         ok = over || gen !== generation; // an abort by reset/stop is not a failure
+        status = Number((e as Error)?.message) || 0;
       } finally {
         fetches.delete(ctrl);
         pendingRequests--;
       }
       if (!ok) {
-        neuralDownUntil = Date.now() + 10 * 60_000;
+        // a used-up minute quota passes quickly; anything else (no key, outage) lasts longer
+        neuralDownUntil = Date.now() + (status === 429 ? 60_000 : 5 * 60_000);
         handOver(part);
         return;
       }
@@ -642,16 +677,10 @@ function neuralStream(h: SpeakHandlers): SpeechStream {
 
   const sendReady = (all: boolean) => {
     if (over || fallback) return;
-    if (!sentFirst) {
-      // the first finished sentence goes at once, so the voice starts with the text
-      const m = buffer.match(/^[\s\S]*?[.!?…:;](?=\s)|^[\s\S]*?\n/);
-      if (m && m[0].trim().length > 1) {
-        sentFirst = true;
-        request(m[0]);
-        buffer = buffer.slice(m[0].length);
-      }
-    }
+    // one request per answer: the free tier allows very few requests a minute, and a second
+    // request for the rest of the answer was what ran into the limit (and the browser voice)
     if (all && buffer.trim()) {
+      sentFirst = true;
       request(buffer);
       buffer = '';
     }

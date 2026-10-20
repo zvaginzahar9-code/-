@@ -45,7 +45,27 @@ describe('neural voice endpoint', () => {
   });
 
   it('voice, model and style can be changed without code', () => {
-    expect(ttsSettings({ GEMINI_TTS_VOICE: 'Achird', GEMINI_TTS_MODEL: 'gemini-3.8-flash-tts', GEMINI_TTS_STYLE: 'calm' })).toEqual({ voice: 'Achird', model: 'gemini-3.8-flash-tts', style: 'calm' });
+    expect(ttsSettings({ GEMINI_TTS_VOICE: 'Achird', GEMINI_TTS_MODEL: 'gemini-3.8-flash-tts', GEMINI_TTS_STYLE: 'calm' })).toEqual({ voice: 'Achird', model: 'gemini-3.8-flash-tts', models: ['gemini-3.8-flash-tts'], style: 'calm' });
+  });
+
+  it('when one model has used up its free quota (429) the next one speaks', async () => {
+    let n = 0;
+    const models: string[] = [];
+    const fetch = (async (_u: string, init: RequestInit) => {
+      models.push(JSON.parse(String(init.body)).model);
+      return n++ === 0 ? new Response('{}', { status: 429 }) : new Response(sse([5, 0]));
+    }) as unknown as typeof globalThis.fetch;
+    const res = await handleTts(req('Да.'), { env: ENV, fetch, limit: open });
+    expect(res.status).toBe(200);
+    expect(models).toEqual(['gemini-3.8-flash-lite-tts', 'gemini-3.8-flash-tts']);
+  });
+
+  it('abbreviations are written the way they are said, so the voice does not spell them like a foreigner', async () => {
+    const { speakable } = await import('../server/tts');
+    expect(speakable('ТОО «Энергоконструкция» — опоры ЛЭП 35–750 кВ.')).toBe('тэ-о-о Энергоконструкция, опоры ЛЭП 35–750 киловольт.');
+    expect(speakable('- ВЛ 500 кВ Экибастуз — ШГЭС')).toBe('вэ-эл 500 киловольт Экибастуз, Шульбинская гэс');
+    expect(speakable('порталы ОРУ, ВЭС 100 МВт')).toBe('порталы о-эр-у, вэс 100 мегаватт');
+    expect(speakable('Высота 31 м, масса 2726 кг')).toBe('Высота 31 м, масса 2726 кг'); // inflected units are left to the voice
   });
 
   it('reports errors so the page can fall back to the browser voice', async () => {

@@ -53,11 +53,33 @@ function visible(): Entry[] {
   return all.filter(e => e.cat.id === state.cat && (!state.group || e.group.id === state.group));
 }
 
+/**
+ * For a mark with no drawing anywhere: its data from the catalogue, set like the title block of a
+ * drawing (mark, mass, album/drawing number, height, or the first row of its table). Nothing invented.
+ */
+function passport(it: Item, max: number, group = ''): [string, string][] {
+  const rows: [string, string][] = [];
+  if (group) rows.push(['Группа', group]);
+  if (it.keys.mass != null) rows.push(['Масса', `${num(it.keys.mass)} кг`]);
+  if (it.keys.H != null) rows.push(['Высота', `${num(it.keys.H)} м`]);
+  if (it.keys.doc) rows.push(['Чертёж / альбом', it.keys.doc]);
+  const t = it.tables[0];
+  if (t && t.length > 1) {
+    t[0].forEach((h, k) => {
+      const v = t[1][k]?.t;
+      if (k > 0 && v && v !== '—' && !/масса|вес|высота|чертеж|чертёж|альбом/i.test(h.t)) rows.push([h.t, v]);
+    });
+  }
+  return rows.slice(0, max);
+}
+const passportHtml = (it: Item, max: number, cls: string, group = '') =>
+  `<span class="${cls}"><span class="pass__k">Паспорт изделия</span><b>${esc(it.mark)}</b>${passport(it, max, group)
+    .map(([k, v]) => `<span class="pass__r"><span>${esc(k)}</span><span>${esc(v)}</span></span>`)
+    .join('')}</span>`;
+
 function card(e: Entry, i: number, showGroup: boolean) {
   const it = e.item;
-  const fig = it.draw
-    ? `<img src="${thumbSrc(it)}" alt="" loading="lazy" decoding="async">`
-    : `<span class="it__none">Чертёж<br>по запросу</span>`;
+  const fig = it.draw ? `<img src="${thumbSrc(it)}" alt="" loading="lazy" decoding="async">` : passportHtml(it, 3, 'pass', e.group.title);
   const meta = [massLabel(it.keys.mass), it.keys.H ? `H ${num(it.keys.H)} м` : ''].filter(Boolean).join(' · ');
   return `<li style="--i:${i % PAGE}"><button class="it" type="button" data-item="${esc(it.slug)}" aria-label="${esc(it.name)} — открыть лист">
     <span class="it__draw">${fig}</span>
@@ -249,6 +271,7 @@ function fill(e: Entry) {
     img.removeAttribute('src');
   }
   none.hidden = !!it.draw;
+  none.innerHTML = it.draw ? '' : passportHtml(it, 6, 'pass pass--big', e.group.title);
   const cap = $('[data-isheet-cap]', s)!;
   // one scheme is shown for the whole series: say so, so its figures are not read as this mark's
   cap.textContent = !it.draw

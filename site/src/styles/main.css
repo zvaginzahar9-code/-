@@ -498,7 +498,18 @@ ol, ul { padding: 0; list-style: none; }
 .it { position: relative; display: flex; flex-direction: column; width: 100%; height: 100%; text-align: left; background: var(--paper); transition: background-color 200ms ease; }
 .it__draw { position: relative; display: grid; place-items: center; aspect-ratio: 4 / 5; padding: 14px; overflow: hidden; background-image: linear-gradient(var(--line) 1px, transparent 1px), linear-gradient(90deg, var(--line) 1px, transparent 1px); background-size: 24px 24px; background-position: -1px -1px; }
 .it__draw img { width: 100%; height: 100%; object-fit: contain; mix-blend-mode: multiply; transition: transform 320ms var(--ease-out); }
-.it__none { font-family: var(--mono); font-size: 11px; line-height: 1.4; text-transform: uppercase; letter-spacing: 0.06em; color: var(--steel); text-align: center; padding: 16px 12px; border: 1px dashed var(--line-strong); background: var(--paper); }
+/* "паспорт изделия": a mark with no drawing anywhere, its catalogue data set as a title block */
+.pass { display: flex; flex-direction: column; width: 100%; max-width: 220px; border: 1.5px solid var(--graphite); background: var(--paper); font-size: 11px; }
+.pass__k { padding: 4px 8px; border-bottom: 1px solid var(--graphite); font-family: var(--mono); font-size: 9.5px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--steel); }
+.pass b { padding: 10px 8px 8px; font-size: 22px; font-weight: 640; letter-spacing: -0.03em; line-height: 1; overflow-wrap: anywhere; border-bottom: 1px solid var(--graphite); }
+.pass__r { display: flex; justify-content: space-between; gap: 8px; padding: 4px 8px; border-bottom: 1px solid var(--line-strong); }
+.pass__r:last-child { border-bottom: 0; }
+.pass__r span:first-child { color: var(--steel); }
+.pass__r span:last-child { font-family: var(--mono); font-feature-settings: 'tnum' 1; text-align: right; overflow-wrap: anywhere; }
+.pass--big { max-width: none; font-size: 14px; }
+.pass--big .pass__k { font-size: 11px; padding: 6px 12px; }
+.pass--big b { font-size: clamp(36px, 4vw, 56px); padding: 18px 12px 14px; }
+.pass--big .pass__r { padding: 8px 12px; }
 .it__stamp { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; padding: 10px 12px 2px; border-top: 1px solid var(--line-strong); }
 .it__stamp b { font-size: 17px; font-weight: 600; letter-spacing: -0.02em; line-height: 1.15; overflow-wrap: anywhere; }
 .it__stamp span { flex: none; font-family: var(--mono); font-size: 11px; color: var(--steel); font-feature-settings: 'tnum' 1; }
@@ -521,7 +532,7 @@ ol, ul { padding: 0; list-style: none; }
 .isheet__draw { display: flex; flex-direction: column; padding: clamp(44px, 8vh, 90px) clamp(28px, 5vw, 80px) 96px; }
 .isheet__fig { position: relative; flex: 1; min-height: 0; margin: 0; }
 .isheet__img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; mix-blend-mode: multiply; }
-.isheet__none { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); width: max-content; max-width: 100%; font-family: var(--mono); font-size: 13px; line-height: 1.5; text-transform: uppercase; letter-spacing: 0.06em; color: var(--steel); text-align: center; padding: 28px 32px; border: 1px dashed var(--line-strong); background: var(--paper); }
+.isheet__none { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); width: min(420px, 100%); }
 .isheet__cap { position: relative; margin-top: 14px; font-family: var(--mono); font-size: 11px; line-height: 1.4; color: var(--steel); text-align: center; }
 .isheet__cap:empty { display: none; }
 .isheet__name { color: var(--steel); margin: calc(-1 * clamp(14px, 3vh, 28px)) 0 clamp(20px, 3vh, 32px); }
